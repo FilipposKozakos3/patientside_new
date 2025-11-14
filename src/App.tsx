@@ -1,0 +1,365 @@
+import { useState } from 'react';
+import { StoredHealthRecord } from './types/fhir';
+import { Auth } from './components/Auth';
+import { Dashboard } from './components/Dashboard';
+import { RecordsLibrary } from './components/RecordsLibrary';
+import { UploadRecord } from './components/UploadRecord';
+import { ExportOptions } from './components/ExportOptions';
+import { RecordViewer } from './components/RecordViewer';
+import { ConsentManager } from './components/ConsentManager';
+import { StorageStats } from './components/StorageStats';
+import { SampleDataGenerator } from './components/SampleDataGenerator';
+import { PatientExportSummary } from './components/PatientExportSummary';
+import { ProviderManager } from './components/ProviderManager';
+import { PatientProfile } from './components/PatientProfile';
+import { Settings as SettingsComponent } from './components/Settings';
+import { ProfilePage } from './components/ProfilePage';
+import { NotificationsPage } from './components/NotificationsPage';
+import { ProviderPortal } from './components/ProviderPortal';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
+import { Button } from './components/ui/button';
+import { Input } from './components/ui/input';
+import { Label } from './components/ui/label';
+import { Toaster } from './components/ui/sonner';
+import { Avatar, AvatarFallback, AvatarImage } from './components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './components/ui/dropdown-menu';
+import { 
+  Heart, 
+  FolderOpen, 
+  Upload, 
+  Settings, 
+  Info, 
+  Share2, 
+  Sparkles,
+  LayoutDashboard,
+  Building2,
+  LogOut,
+  UserCircle,
+  Bell
+} from 'lucide-react';
+import { Alert, AlertDescription } from './components/ui/alert';
+
+interface UserData {
+  email: string;
+  role: string;
+  name: string;
+}
+
+export default function App() {
+  const [user, setUser] = useState<UserData | null>(null);
+  const [currentView, setCurrentView] = useState<string>('dashboard');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [selectedRecord, setSelectedRecord] = useState<StoredHealthRecord | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+
+  const handleRefresh = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
+
+  const handleViewRecord = (record: StoredHealthRecord) => {
+    setSelectedRecord(record);
+    setViewerOpen(true);
+  };
+
+  const handleExportRecord = (record: StoredHealthRecord) => {
+    setSelectedRecord(record);
+    setExportOpen(true);
+  };
+
+  const handleShareRecord = (record: StoredHealthRecord) => {
+    setSelectedRecord(record);
+    setConsentOpen(true);
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setCurrentView('dashboard');
+  };
+
+  const handleNavigate = (view: string) => {
+    setCurrentView(view);
+  };
+
+  // Show auth screen if not logged in
+  if (!user) {
+    return <Auth onAuthenticated={setUser} />;
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      {/* Header */}
+      <header className="bg-white border-b sticky top-0 z-10">
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl text-gray-900">
+              {user.role === 'patient' ? 'Patient Side' : 'Healthcare Provider'}
+            </h1>
+            <div className="flex items-center gap-4">
+              {user.role === 'patient' && (
+                <>
+                  <Button 
+                    onClick={() => setSummaryOpen(true)}
+                    variant="outline"
+                    size="sm"
+                  >
+                    Export Health Summary
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="relative"
+                    onClick={() => setCurrentView('notifications')}
+                  >
+                    <Bell className="w-5 h-5" />
+                    {/* Notification badge */}
+                    <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
+                  </Button>
+                </>
+              )}
+              {user.role === 'patient' ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="rounded-full w-10 h-10 p-0"
+                  onClick={() => setCurrentView('profile')}
+                >
+                  <UserCircle className="w-6 h-6" />
+                </Button>
+              ) : (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <Avatar className="w-10 h-10 cursor-pointer">
+                        <AvatarImage src="" alt={user.name} />
+                        <AvatarFallback className="bg-blue-600 text-white">
+                          {user.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>
+                      <div className="flex flex-col space-y-1">
+                        <p className="text-sm">{user.name}</p>
+                        <p className="text-xs text-gray-500">{user.email}</p>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => setCurrentView('profile')}>
+                      <UserCircle className="mr-2 h-4 w-4" />
+                      <span>Profile</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setCurrentView('settings')}>
+                      <Settings className="mr-2 h-4 w-4" />
+                      <span>Settings</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleLogout}>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      <span>Logout</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="container mx-auto px-6 py-6">
+        {user.role === 'provider' && currentView !== 'profile' && currentView !== 'notifications' && currentView !== 'settings' ? (
+          // Provider Portal Layout
+          <ProviderPortal
+            providerName={user.name}
+            providerEmail={user.email}
+            onLogout={handleLogout}
+          />
+        ) : (
+          <div className={`grid grid-cols-1 ${currentView !== 'profile' && currentView !== 'notifications' ? 'lg:grid-cols-4' : ''} gap-6`}>
+            {/* Left Column - Main Content */}
+            <div className={`${currentView !== 'profile' && currentView !== 'notifications' ? 'lg:col-span-3' : ''} space-y-6`}>
+              {/* Navigation Tabs - Patient Only */}
+              {currentView !== 'profile' && currentView !== 'notifications' && user.role === 'patient' && (
+              <Tabs value={currentView} onValueChange={setCurrentView} className="w-full">
+                <TabsList className="grid w-full grid-cols-5 bg-gray-200">
+                  <TabsTrigger value="dashboard" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
+                    <LayoutDashboard className="w-4 h-4 mr-2" />
+                    Dashboard
+                  </TabsTrigger>
+                  <TabsTrigger value="records" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
+                    <FolderOpen className="w-4 h-4 mr-2" />
+                    Records
+                  </TabsTrigger>
+                  <TabsTrigger value="upload" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload
+                  </TabsTrigger>
+                  <TabsTrigger value="providers" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
+                    <Building2 className="w-4 h-4 mr-2" />
+                    Providers
+                  </TabsTrigger>
+                  <TabsTrigger value="settings" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
+                    <Settings className="w-4 h-4 mr-2" />
+                    Settings
+                  </TabsTrigger>
+                </TabsList>
+
+              <TabsContent value="dashboard" className="mt-0">
+                <Dashboard
+                  userName={user.name}
+                  userRole={user.role}
+                  onNavigate={handleNavigate}
+                  onExportSummary={() => setSummaryOpen(true)}
+                  refreshTrigger={refreshTrigger}
+                />
+              </TabsContent>
+
+              <TabsContent value="records" className="mt-0">
+                <RecordsLibrary
+                  onViewRecord={handleViewRecord}
+                  onExportRecord={handleExportRecord}
+                  onShareRecord={handleShareRecord}
+                  refreshTrigger={refreshTrigger}
+                />
+              </TabsContent>
+
+              <TabsContent value="upload" className="mt-0">
+                <UploadRecord onRecordAdded={handleRefresh} />
+              </TabsContent>
+
+              <TabsContent value="providers" className="mt-0">
+                <ProviderManager />
+              </TabsContent>
+
+              <TabsContent value="settings" className="mt-0">
+                <SettingsComponent
+                  currentEmail={user.email}
+                  currentName={user.name}
+                  userRole={user.role}
+                  onEmailChange={(email) => setUser({ ...user, email })}
+                  onPasswordChange={() => {
+                    // Password change logic (in real app would be handled by backend)
+                  }}
+                  onLogout={handleLogout}
+                />
+              </TabsContent>
+            </Tabs>
+            )}
+
+              {/* Profile Page */}
+              {currentView === 'profile' && (
+                <ProfilePage
+                  userName={user.name}
+                  userEmail={user.email}
+                  onLogout={handleLogout}
+                  onBack={() => setCurrentView('dashboard')}
+                />
+              )}
+
+              {/* Settings Page - Provider Only (Patient has it in tabs) */}
+              {currentView === 'settings' && user.role === 'provider' && (
+                <div className="space-y-6 max-w-4xl">
+                  <div className="flex items-center gap-3">
+                    <Button 
+                      onClick={() => setCurrentView('dashboard')}
+                      variant="ghost"
+                      size="sm"
+                    >
+                      <LayoutDashboard className="w-4 h-4 mr-2" />
+                      Back to Portal
+                    </Button>
+                    <h1 className="text-2xl text-gray-900">Settings</h1>
+                  </div>
+                  <SettingsComponent
+                    currentEmail={user.email}
+                    currentName={user.name}
+                    userRole={user.role}
+                    onEmailChange={(email) => setUser({ ...user, email })}
+                    onPasswordChange={() => {
+                      // Password change logic (in real app would be handled by backend)
+                    }}
+                    onLogout={handleLogout}
+                  />
+                </div>
+              )}
+
+              {/* Notifications Page */}
+              {currentView === 'notifications' && (
+                <NotificationsPage
+                  onBack={() => setCurrentView('dashboard')}
+                />
+              )}
+            </div>
+
+            {/* Right Column - Data Summary Sidebar */}
+            {currentView !== 'profile' && currentView !== 'notifications' && (
+              <div className="space-y-6">
+                <StorageStats refreshTrigger={refreshTrigger} userRole={user.role} />
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* Dialogs */}
+      <RecordViewer
+        record={selectedRecord}
+        isOpen={viewerOpen}
+        onClose={() => {
+          setViewerOpen(false);
+          setSelectedRecord(null);
+        }}
+      />
+
+      <ExportOptions
+        record={selectedRecord}
+        isOpen={exportOpen}
+        onClose={() => {
+          setExportOpen(false);
+          setSelectedRecord(null);
+        }}
+      />
+
+      <ConsentManager
+        record={selectedRecord}
+        isOpen={consentOpen}
+        onClose={() => {
+          setConsentOpen(false);
+          setSelectedRecord(null);
+        }}
+        onUpdate={handleRefresh}
+      />
+
+      <PatientExportSummary
+        isOpen={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+      />
+
+      {/* Footer */}
+      <footer className="border-t bg-white mt-12">
+        <div className="container mx-auto px-6 py-6">
+          <div className="text-center text-sm text-gray-600">
+            <p>
+              Patient Side Storage System • FHIR R4 Compatible • Privacy-First Design
+            </p>
+          </div>
+        </div>
+      </footer>
+
+      {/* Toast Notifications */}
+      <Toaster />
+    </div>
+  );
+}
