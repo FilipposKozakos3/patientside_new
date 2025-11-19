@@ -5,227 +5,142 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Alert, AlertDescription } from './ui/alert';
-import { Heart, User, Shield, CheckCircle } from 'lucide-react';
+import { Heart, CheckCircle } from 'lucide-react';
 
-import { supabase } from "../supabase/supabaseClient";
-
+import { supabase } from '../supabase/supabaseClient';
 
 interface AuthProps {
+  role: string; // 👈 coming from App.tsx
   onAuthenticated: (userData: { email: string; role: string; name: string }) => void;
 }
 
-export function Auth({ onAuthenticated }: AuthProps) {
+export function Auth({ role, onAuthenticated }: AuthProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [error, setError] = useState('');
-  const [showRoleSelection, setShowRoleSelection] = useState(false);
-
-  
-  
-  // const handleLogin = (e: React.FormEvent) => {
-  //   e.preventDefault();
-  //   setError('');
-
-  //   if (!email || !password) {
-  //     setError('Please enter both email and password');
-  //     return;
-  //   }
-
-  //   // Simple validation (in production, this would be actual authentication)
-  //   if (password.length < 6) {
-  //     setError('Password must be at least 6 characters');
-  //     return;
-  //   }
-
-  //   setShowRoleSelection(true);
-  // };
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError('');
+    e.preventDefault();
+    setError('');
 
-  if (!email || !password) {
-    setError('Please enter both email and password');
-    return;
-  }
-
-  if (password.length < 6) {
-    setError('Password must be at least 6 characters');
-    return;
-  }
-
-  try {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      setError(error.message);
+    if (!email || !password) {
+      setError('Please enter both email and password');
       return;
     }
 
-    const user = data.user;
-    if (!user) {
-      setError('Login failed. Please try again.');
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
       return;
     }
 
-    // Try to get profile name
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', user.id)
-      .maybeSingle();
+    try {
+      setLoading(true);
 
-    if (profileError && profileError.code !== 'PGRST116') {
-      console.error(profileError);
+      const { data, error: loginError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (loginError) {
+        setError(loginError.message);
+        return;
+      }
+
+      const user = data.user;
+      if (!user) {
+        setError('Login failed. Please try again.');
+        return;
+      }
+
+      // Get profile name if available
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (profileError && profileError.code !== 'PGRST116') {
+        console.error(profileError);
+      }
+
+      const finalName = profile?.full_name || name || email.split('@')[0];
+
+      setName(finalName);
+      localStorage.setItem('lastEmail', email);
+
+      onAuthenticated({
+        email,
+        role,
+        name: finalName,
+      });
+    } catch (err) {
+      console.error(err);
+      setError('Unexpected error during login. Please try again.');
+    } finally {
+      setLoading(false);
     }
-
-    if (profile?.full_name) {
-      setName(profile.full_name);
-    } else if (!name) {
-      setName(email.split('@')[0]);
-    }
-
-    // Remember email only (NOT password)
-    localStorage.setItem('lastEmail', email);
-
-    setShowRoleSelection(true);
-  } catch (err) {
-    console.error(err);
-    setError('Unexpected error during login. Please try again.');
-  }
-};
-
-
-
-
-  // const handleSignup = (e: React.FormEvent) => {
-  //   e.preventDefault();
-  //   setError('');
-
-  //   if (!name || !email || !password) {
-  //     setError('Please fill in all fields');
-  //     return;
-  //   }
-
-  //   if (password.length < 6) {
-  //     setError('Password must be at least 6 characters');
-  //     return;
-  //   }
-
-  //   setShowRoleSelection(true);
-  // };
+  };
 
   const handleSignup = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setError('');
+    e.preventDefault();
+    setError('');
 
-  if (!name || !email || !password) {
-    setError('Please fill in all fields');
-    return;
-  }
-
-  if (password.length < 6) {
-    setError('Password must be at least 6 characters');
-    return;
-  }
-
-  try {
-    // Create auth user
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-
-    if (error) {
-      setError(error.message);
+    if (!name || !email || !password) {
+      setError('Please fill in all fields');
       return;
     }
 
-    const user = data.user;
-    if (!user) {
-      setError('Sign up failed. Please try again.');
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
       return;
     }
 
-    // Create profile row
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .upsert({
+    try {
+      setLoading(true);
+
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (signUpError) {
+        setError(signUpError.message);
+        return;
+      }
+
+      const user = data.user;
+      if (!user) {
+        setError('Sign up failed. Please try again.');
+        return;
+      }
+
+      // Create / update profile row
+      const { error: profileError } = await supabase.from('profiles').upsert({
         id: user.id,
         email: user.email,
         full_name: name,
       });
 
-    if (profileError) {
-      console.error(profileError);
-      // not fatal for the user flow
+      if (profileError) {
+        console.error(profileError);
+      }
+
+      localStorage.setItem('lastEmail', email);
+
+      onAuthenticated({
+        email,
+        role,
+        name,
+      });
+    } catch (err) {
+      console.error(err);
+      setError('Unexpected error during sign up. Please try again.');
+    } finally {
+      setLoading(false);
     }
-
-    localStorage.setItem('lastEmail', email);
-
-    setShowRoleSelection(true);
-  } catch (err) {
-    console.error(err);
-    setError('Unexpected error during sign up. Please try again.');
-  }
-};
-
-  const handleRoleSelection = (role: string) => {
-    onAuthenticated({
-      email,
-      role,
-      name: name || email.split('@')[0]
-    });
   };
-
-  if (showRoleSelection) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="flex justify-center mb-4">
-              <div className="p-3 bg-blue-600 rounded-full">
-                <Heart className="w-8 h-8 text-white" />
-              </div>
-            </div>
-            <CardTitle>Choose Your Role</CardTitle>
-            <CardDescription>
-              Select how you'll be using the system
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button
-              onClick={() => handleRoleSelection('patient')}
-              className="w-full h-auto py-6 flex flex-col items-center gap-2"
-              variant="outline"
-            >
-              <User className="w-8 h-8 text-blue-600" />
-              <div>
-                <div>Patient</div>
-                <div className="text-xs text-gray-500">Manage my health records</div>
-              </div>
-            </Button>
-
-            <Button
-              onClick={() => handleRoleSelection('provider')}
-              className="w-full h-auto py-6 flex flex-col items-center gap-2"
-              variant="outline"
-            >
-              <Shield className="w-8 h-8 text-green-600" />
-              <div>
-                <div>Healthcare Provider</div>
-                <div className="text-xs text-gray-500">Access patient records</div>
-              </div>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
@@ -240,6 +155,10 @@ export function Auth({ onAuthenticated }: AuthProps) {
           <CardDescription>
             Secure, Offline, FHIR-Compliant Personal Storage
           </CardDescription>
+          <div className="mt-2 text-xs text-muted-foreground">
+            Logging in as{' '}
+            <span className="font-semibold capitalize">{role}</span>
+          </div>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="login">
@@ -255,7 +174,7 @@ export function Auth({ onAuthenticated }: AuthProps) {
                   <Input
                     id="login-email"
                     type="email"
-                    placeholder="patient@example.com"
+                    placeholder="you@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />
@@ -275,8 +194,8 @@ export function Auth({ onAuthenticated }: AuthProps) {
                     <AlertDescription>{error}</AlertDescription>
                   </Alert>
                 )}
-                <Button type="submit" className="w-full">
-                  Login
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? 'Logging in…' : 'Login'}
                 </Button>
               </form>
             </TabsContent>
@@ -298,7 +217,7 @@ export function Auth({ onAuthenticated }: AuthProps) {
                   <Input
                     id="signup-email"
                     type="email"
-                    placeholder="patient@example.com"
+                    placeholder="you@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />
@@ -318,8 +237,8 @@ export function Auth({ onAuthenticated }: AuthProps) {
                     <AlertDescription>{error}</AlertDescription>
                   </Alert>
                 )}
-                <Button type="submit" className="w-full">
-                  Sign Up
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? 'Creating account…' : 'Sign Up'}
                 </Button>
               </form>
             </TabsContent>
