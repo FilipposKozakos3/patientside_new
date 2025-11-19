@@ -62,6 +62,7 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<string | null>(null);
 
   const handleRefresh = () => {
     setRefreshTrigger(prev => prev + 1);
@@ -91,9 +92,70 @@ export default function App() {
     setCurrentView(view);
   };
 
-  // Show auth screen if not logged in
-  if (!user) {
-    return <Auth onAuthenticated={setUser} />;
+  // Entry flow:
+  // 1) No user & no role → show role selection
+  // 2) No user & role chosen → show auth for that role
+  // 3) User present → show main app
+  if (!user && !selectedRole) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+        <Card className="w-full max-w-5xl h-[80vh] shadow-md border-0 overflow-hidden">
+          <div className="grid grid-cols-1 md:grid-cols-2 h-full">
+            {/* Left side: logo, heading, buttons */}
+            <div className="p-8 md:p-10 flex flex-col justify-center gap-6">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-gray-500 tracking-wide">
+                  PatientSide
+                </p>
+                <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">
+                  Choose your role
+                </h1>
+                <p className="text-sm text-gray-600">
+                  Select how you&apos;ll be using PatientSide to continue.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <Button
+                  variant="outline"
+                  className="w-full justify-center py-3 text-sm font-medium hover:bg-gray-100"
+                  onClick={() => setSelectedRole('patient')}
+                >
+                  I&apos;m a patient
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-center py-3 text-sm font-medium hover:bg-gray-100"
+                  onClick={() => setSelectedRole('provider')}
+                >
+                  I&apos;m a healthcare provider
+                </Button>
+              </div>
+            </div>
+
+            {/* Right side: image area */}
+            <div className="hidden md:block bg-gray-200">
+              {/* Replace this with your actual image asset / URL */}
+              <div
+                className="h-full w-full bg-cover bg-center"
+                style={{ backgroundImage: "url('/role-select-hero.png')" }}
+              />
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!user && selectedRole) {
+    return (
+      <Auth
+        role={selectedRole}
+        onAuthenticated={(userData: UserData) => {
+          setUser({ ...userData, role: selectedRole });
+        }}
+      />
+    );
   }
 
   return (
@@ -192,71 +254,71 @@ export default function App() {
             <div className={`${currentView !== 'profile' && currentView !== 'notifications' ? 'lg:col-span-3' : ''} space-y-6`}>
               {/* Navigation Tabs - Patient Only */}
               {currentView !== 'profile' && currentView !== 'notifications' && user.role === 'patient' && (
-              <Tabs value={currentView} onValueChange={setCurrentView} className="w-full">
-                <TabsList className="grid w-full grid-cols-5 bg-gray-200">
-                  <TabsTrigger value="dashboard" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
-                    <LayoutDashboard className="w-4 h-4 mr-2" />
-                    Dashboard
-                  </TabsTrigger>
-                  <TabsTrigger value="records" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
-                    <FolderOpen className="w-4 h-4 mr-2" />
-                    Records
-                  </TabsTrigger>
-                  <TabsTrigger value="upload" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
-                    <Upload className="w-4 h-4 mr-2" />
-                    Upload
-                  </TabsTrigger>
-                  <TabsTrigger value="providers" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
-                    <Building2 className="w-4 h-4 mr-2" />
-                    Providers
-                  </TabsTrigger>
-                  <TabsTrigger value="settings" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
-                    <Settings className="w-4 h-4 mr-2" />
-                    Settings
-                  </TabsTrigger>
-                </TabsList>
+                <Tabs value={currentView} onValueChange={setCurrentView} className="w-full">
+                  <TabsList className="grid w-full grid-cols-5 bg-gray-200">
+                    <TabsTrigger value="dashboard" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
+                      <LayoutDashboard className="w-4 h-4 mr-2" />
+                      Dashboard
+                    </TabsTrigger>
+                    <TabsTrigger value="records" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
+                      <FolderOpen className="w-4 h-4 mr-2" />
+                      Records
+                    </TabsTrigger>
+                    <TabsTrigger value="upload" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload
+                    </TabsTrigger>
+                    <TabsTrigger value="providers" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
+                      <Building2 className="w-4 h-4 mr-2" />
+                      Providers
+                    </TabsTrigger>
+                    <TabsTrigger value="settings" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
+                      <Settings className="w-4 h-4 mr-2" />
+                      Settings
+                    </TabsTrigger>
+                  </TabsList>
 
-              <TabsContent value="dashboard" className="mt-0">
-                <Dashboard
-                  userName={user.name}
-                  userRole={user.role}
-                  onNavigate={handleNavigate}
-                  onExportSummary={() => setSummaryOpen(true)}
-                  refreshTrigger={refreshTrigger}
-                />
-              </TabsContent>
+                  <TabsContent value="dashboard" className="mt-0">
+                    <Dashboard
+                      userName={user.name}
+                      userRole={user.role}
+                      onNavigate={handleNavigate}
+                      onExportSummary={() => setSummaryOpen(true)}
+                      refreshTrigger={refreshTrigger}
+                    />
+                  </TabsContent>
 
-              <TabsContent value="records" className="mt-0">
-                <RecordsLibrary
-                  onViewRecord={handleViewRecord}
-                  onExportRecord={handleExportRecord}
-                  onShareRecord={handleShareRecord}
-                  refreshTrigger={refreshTrigger}
-                />
-              </TabsContent>
+                  <TabsContent value="records" className="mt-0">
+                    <RecordsLibrary
+                      onViewRecord={handleViewRecord}
+                      onExportRecord={handleExportRecord}
+                      onShareRecord={handleShareRecord}
+                      refreshTrigger={refreshTrigger}
+                    />
+                  </TabsContent>
 
-              <TabsContent value="upload" className="mt-0">
-                <UploadRecord onRecordAdded={handleRefresh} />
-              </TabsContent>
+                  <TabsContent value="upload" className="mt-0">
+                    <UploadRecord onRecordAdded={handleRefresh} />
+                  </TabsContent>
 
-              <TabsContent value="providers" className="mt-0">
-                <ProviderManager />
-              </TabsContent>
+                  <TabsContent value="providers" className="mt-0">
+                    <ProviderManager />
+                  </TabsContent>
 
-              <TabsContent value="settings" className="mt-0">
-                <SettingsComponent
-                  currentEmail={user.email}
-                  currentName={user.name}
-                  userRole={user.role}
-                  onEmailChange={(email) => setUser({ ...user, email })}
-                  onPasswordChange={() => {
-                    // Password change logic (in real app would be handled by backend)
-                  }}
-                  onLogout={handleLogout}
-                />
-              </TabsContent>
-            </Tabs>
-            )}
+                  <TabsContent value="settings" className="mt-0">
+                    <SettingsComponent
+                      currentEmail={user.email}
+                      currentName={user.name}
+                      userRole={user.role}
+                      onEmailChange={(email) => setUser({ ...user, email })}
+                      onPasswordChange={() => {
+                        // Password change logic (in real app would be handled by backend)
+                      }}
+                      onLogout={handleLogout}
+                    />
+                  </TabsContent>
+                </Tabs>
+              )}
 
               {/* Profile Page */}
               {currentView === 'profile' && (
