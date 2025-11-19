@@ -7,6 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Alert, AlertDescription } from './ui/alert';
 import { Heart, User, Shield, CheckCircle } from 'lucide-react';
 
+import { supabase } from "../supabase/supabaseClient";
+
+
 interface AuthProps {
   onAuthenticated: (userData: { email: string; role: string; name: string }) => void;
 }
@@ -18,40 +21,158 @@ export function Auth({ onAuthenticated }: AuthProps) {
   const [error, setError] = useState('');
   const [showRoleSelection, setShowRoleSelection] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  
+  
+  // const handleLogin = (e: React.FormEvent) => {
+  //   e.preventDefault();
+  //   setError('');
 
-    if (!email || !password) {
-      setError('Please enter both email and password');
+  //   if (!email || !password) {
+  //     setError('Please enter both email and password');
+  //     return;
+  //   }
+
+  //   // Simple validation (in production, this would be actual authentication)
+  //   if (password.length < 6) {
+  //     setError('Password must be at least 6 characters');
+  //     return;
+  //   }
+
+  //   setShowRoleSelection(true);
+  // };
+
+  const handleLogin = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setError('');
+
+  if (!email || !password) {
+    setError('Please enter both email and password');
+    return;
+  }
+
+  if (password.length < 6) {
+    setError('Password must be at least 6 characters');
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setError(error.message);
       return;
     }
 
-    // Simple validation (in production, this would be actual authentication)
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+    const user = data.user;
+    if (!user) {
+      setError('Login failed. Please try again.');
       return;
     }
+
+    // Try to get profile name
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (profileError && profileError.code !== 'PGRST116') {
+      console.error(profileError);
+    }
+
+    if (profile?.full_name) {
+      setName(profile.full_name);
+    } else if (!name) {
+      setName(email.split('@')[0]);
+    }
+
+    // Remember email only (NOT password)
+    localStorage.setItem('lastEmail', email);
 
     setShowRoleSelection(true);
-  };
+  } catch (err) {
+    console.error(err);
+    setError('Unexpected error during login. Please try again.');
+  }
+};
 
-  const handleSignup = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
 
-    if (!name || !email || !password) {
-      setError('Please fill in all fields');
+
+
+  // const handleSignup = (e: React.FormEvent) => {
+  //   e.preventDefault();
+  //   setError('');
+
+  //   if (!name || !email || !password) {
+  //     setError('Please fill in all fields');
+  //     return;
+  //   }
+
+  //   if (password.length < 6) {
+  //     setError('Password must be at least 6 characters');
+  //     return;
+  //   }
+
+  //   setShowRoleSelection(true);
+  // };
+
+  const handleSignup = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setError('');
+
+  if (!name || !email || !password) {
+    setError('Please fill in all fields');
+    return;
+  }
+
+  if (password.length < 6) {
+    setError('Password must be at least 6 characters');
+    return;
+  }
+
+  try {
+    // Create auth user
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (error) {
+      setError(error.message);
       return;
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+    const user = data.user;
+    if (!user) {
+      setError('Sign up failed. Please try again.');
       return;
     }
+
+    // Create profile row
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .upsert({
+        id: user.id,
+        email: user.email,
+        full_name: name,
+      });
+
+    if (profileError) {
+      console.error(profileError);
+      // not fatal for the user flow
+    }
+
+    localStorage.setItem('lastEmail', email);
 
     setShowRoleSelection(true);
-  };
+  } catch (err) {
+    console.error(err);
+    setError('Unexpected error during sign up. Please try again.');
+  }
+};
 
   const handleRoleSelection = (role: string) => {
     onAuthenticated({
