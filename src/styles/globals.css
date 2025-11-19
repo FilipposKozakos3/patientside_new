@@ -1,4 +1,13 @@
-@custom-variant dark (&:is(.dark *));
+/* src/styles/globals.css */
+:root {
+  --background: #f6f8fb; /* new color (was #ffffff) */
+  ...
+}
+
+.dark {
+  --background: oklch(0.145 0 0); /* update if needed for dark mode */
+  ...
+}@custom-variant dark (&:is(.dark *));
 
 :root {
   --font-size: 16px;

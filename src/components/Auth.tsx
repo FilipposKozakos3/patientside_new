@@ -10,7 +10,7 @@ import { Heart, CheckCircle } from 'lucide-react';
 import { supabase } from '../supabase/supabaseClient';
 
 interface AuthProps {
-  role: string; // 👈 coming from App.tsx
+  role: string; // coming from App.tsx
   onAuthenticated: (userData: { email: string; role: string; name: string }) => void;
 }
 
@@ -143,7 +143,10 @@ export function Auth({ role, onAuthenticated }: AuthProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
+    <div
+      className="min-h-screen flex items-center justify-center p-4"
+      style={{ backgroundColor: '#F3F7FF' }}
+    >
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">

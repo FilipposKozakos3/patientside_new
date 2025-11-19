@@ -98,7 +98,7 @@ export default function App() {
   // 3) User present → show main app
   if (!user && !selectedRole) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ backgroundColor: '#F3F7FF' }}>
         <Card className="w-full max-w-5xl h-[80vh] shadow-md border-0 overflow-hidden">
           <div className="grid grid-cols-1 md:grid-cols-2 h-full">
             {/* Left side: logo, heading, buttons */}
@@ -159,7 +159,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen" style={{ backgroundColor: '#F3F7FF' }}>
       {/* Header */}
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="container mx-auto px-6 py-4">
