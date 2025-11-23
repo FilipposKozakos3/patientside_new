@@ -39,21 +39,6 @@ export function Auth({ role, onAuthenticated }: AuthProps) {
     try {
       setLoading(true);
 
-      // Check if Supabase is properly configured
-      const supabaseUrl = import.meta?.env?.VITE_SUPABASE_URL;
-      
-      if (!supabaseUrl || supabaseUrl === 'https://placeholder.supabase.co') {
-        // Fallback to local authentication
-        const finalName = name || email.split('@')[0];
-        localStorage.setItem('lastEmail', email);
-        onAuthenticated({
-          email,
-          role,
-          name: finalName,
-        });
-        return;
-      }
-
       const { data, error: loginError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -93,18 +78,12 @@ export function Auth({ role, onAuthenticated }: AuthProps) {
       });
     } catch (err) {
       console.error(err);
-      // Fallback to local authentication on any error
-      const finalName = name || email.split('@')[0];
-      localStorage.setItem('lastEmail', email);
-      onAuthenticated({
-        email,
-        role,
-        name: finalName,
-      });
+      setError('Unexpected error during login. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,20 +101,6 @@ export function Auth({ role, onAuthenticated }: AuthProps) {
 
     try {
       setLoading(true);
-
-      // Check if Supabase is properly configured
-      const supabaseUrl = import.meta?.env?.VITE_SUPABASE_URL;
-      
-      if (!supabaseUrl || supabaseUrl === 'https://placeholder.supabase.co') {
-        // Fallback to local authentication
-        localStorage.setItem('lastEmail', email);
-        onAuthenticated({
-          email,
-          role,
-          name,
-        });
-        return;
-      }
 
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
@@ -173,17 +138,12 @@ export function Auth({ role, onAuthenticated }: AuthProps) {
       });
     } catch (err) {
       console.error(err);
-      // Fallback to local authentication on any error
-      localStorage.setItem('lastEmail', email);
-      onAuthenticated({
-        email,
-        role,
-        name,
-      });
+      setError('Unexpected error during sign up. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#F3F7FF' }}>

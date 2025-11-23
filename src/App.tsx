@@ -226,7 +226,7 @@ export default function App() {
                       <p className="text-sm">{user.name}</p>
                       <p className="text-xs text-gray-500">{user.email}</p>
                       <p className="text-xs text-gray-900">
-                        {user.role === 'patient' ? 'Patient Side' : 'Healthcare Provider'}
+                        {user.role === 'patient' ? 'Patient' : 'Healthcare Provider'}
                       </p>
                     </div>
                   </DropdownMenuLabel>
