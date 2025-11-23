@@ -21,15 +21,19 @@ interface ProfilePageProps {
   userEmail: string;
   onLogout: () => void;
   onBack?: () => void;
+  userRole?: string;
 }
 
-export function ProfilePage({ userName, userEmail, onLogout, onBack }: ProfilePageProps) {
+export function ProfilePage({ userName, userEmail, onLogout, onBack, userRole }: ProfilePageProps) {
   const [medications, setMedications] = useState<StoredHealthRecord[]>([]);
   const [patientInfo, setPatientInfo] = useState<any>(null);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    // Only load patient-specific data if user is a patient
+    if (userRole !== 'provider') {
+      loadData();
+    }
+  }, [userRole]);
 
   const loadData = () => {
     const allRecords = storageUtils.getAllRecords();
@@ -162,44 +166,46 @@ export function ProfilePage({ userName, userEmail, onLogout, onBack }: ProfilePa
         </CardContent>
       </Card>
 
-      {/* Medications - Full Width */}
-      <Card className="bg-white">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Pill className="w-5 h-5 text-blue-600" />
-            Current Medications
-            <Badge variant="secondary" className="ml-auto">
-              {medications.length}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {medications.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-4">No medications recorded</p>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {medications.map((med) => (
-                <div 
-                  key={med.id}
-                  className="p-4 bg-blue-50 border border-blue-200 rounded-lg"
-                >
-                  <div className="flex items-start gap-2">
-                    <Pill className="w-4 h-4 text-blue-600 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm text-gray-900">{getMedicationName(med)}</p>
-                      {med.provider && (
-                        <p className="text-xs text-gray-600 mt-1">
-                          Prescribed by Dr. {med.provider}
-                        </p>
-                      )}
+      {/* Medications - Only for patients */}
+      {userRole !== 'provider' && (
+        <Card className="bg-white">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Pill className="w-5 h-5 text-blue-600" />
+              Current Medications
+              <Badge variant="secondary" className="ml-auto">
+                {medications.length}
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {medications.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-4">No medications recorded</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {medications.map((med) => (
+                  <div 
+                    key={med.id}
+                    className="p-4 bg-blue-50 border border-blue-200 rounded-lg"
+                  >
+                    <div className="flex items-start gap-2">
+                      <Pill className="w-4 h-4 text-blue-600 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm text-gray-900">{getMedicationName(med)}</p>
+                        {med.provider && (
+                          <p className="text-xs text-gray-600 mt-1">
+                            Prescribed by Dr. {med.provider}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

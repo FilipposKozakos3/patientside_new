@@ -17,7 +17,15 @@ import {
   Clock,
   FileText,
   Upload,
-  Calendar
+  Calendar,
+  X,
+  Eye,
+  ChevronRight,
+  Download,
+  BarChart3,
+  TrendingUp,
+  Users,
+  Activity
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -26,6 +34,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
 } from './ui/dropdown-menu';
 import {
   Select,
@@ -75,6 +84,14 @@ interface Alert {
   timestamp: string;
 }
 
+interface PatientDocument {
+  id: string;
+  name: string;
+  type: string;
+  date: string;
+  url?: string;
+}
+
 export function ProviderPortal({ providerName, providerEmail, onLogout }: ProviderPortalProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [permissionSearch, setPermissionSearch] = useState('');
@@ -82,13 +99,33 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [addDataDialogOpen, setAddDataDialogOpen] = useState(false);
+  const [addDataMethod, setAddDataMethod] = useState<'upload' | 'manual'>('upload');
+  const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<PatientDocument | null>(null);
+  const [notificationDetailOpen, setNotificationDetailOpen] = useState(false);
+  const [selectedNotification, setSelectedNotification] = useState<Alert | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<ConnectedPatient | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  
+  // Filter states
+  const [statusFilter, setStatusFilter] = useState<string[]>(['Active', 'Inactive']);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [permissionStatusFilter, setPermissionStatusFilter] = useState<string[]>(['Granted', 'Revoked', 'Requested']);
+
+  // Form states for manual entry
+  const [manualRecordType, setManualRecordType] = useState('');
+  const [manualTitle, setManualTitle] = useState('');
+  const [manualDescription, setManualDescription] = useState('');
+  const [manualRecordDate, setManualRecordDate] = useState('');
+  const [manualVisitDate, setManualVisitDate] = useState('');
+  const [manualProviderName, setManualProviderName] = useState('');
+  const [manualNotes, setManualNotes] = useState('');
 
   // Handler functions
   const handleAddData = (patient: ConnectedPatient) => {
     setSelectedPatient(patient);
     setAddDataDialogOpen(true);
+    setAddDataMethod('upload');
   };
 
   const handleViewPatient = (patient: ConnectedPatient) => {
@@ -96,21 +133,58 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
     setViewDialogOpen(true);
   };
 
+  const handleViewDocument = (doc: PatientDocument) => {
+    setSelectedDocument(doc);
+    setPdfViewerOpen(true);
+  };
+
   const handleUploadData = () => {
-    if (!uploadFile) {
-      toast.error('Please select a file to upload');
-      return;
+    if (addDataMethod === 'upload') {
+      if (!uploadFile) {
+        toast.error('Please select a file to upload');
+        return;
+      }
+      toast.success(`Data uploaded successfully for ${selectedPatient?.name}`);
+    } else {
+      // Manual entry validation
+      if (!manualRecordType || !manualTitle) {
+        toast.error('Please fill in required fields');
+        return;
+      }
+      toast.success(`Manual record added successfully for ${selectedPatient?.name}`);
     }
-    toast.success(`Data uploaded successfully for ${selectedPatient?.name}`);
+    
+    // Reset form
     setUploadFile(null);
+    setManualRecordType('');
+    setManualTitle('');
+    setManualDescription('');
+    setManualRecordDate('');
+    setManualVisitDate('');
+    setManualProviderName('');
+    setManualNotes('');
     setAddDataDialogOpen(false);
   };
 
-  const handleGrantPermission = (patientName: string, file: string) => {
+  const handleGrantPermission = (permissionId: string, patientName: string, file: string) => {
+    setPermissions(prev => 
+      prev.map(p => 
+        p.id === permissionId 
+          ? { ...p, status: 'Granted' as const }
+          : p
+      )
+    );
     toast.success(`Access granted to ${file} for ${patientName}`);
   };
 
-  const handleRevokePermission = (patientName: string, file: string) => {
+  const handleRevokePermission = (permissionId: string, patientName: string, file: string) => {
+    setPermissions(prev => 
+      prev.map(p => 
+        p.id === permissionId 
+          ? { ...p, status: 'Revoked' as const }
+          : p
+      )
+    );
     toast.warning(`Access revoked to ${file} for ${patientName}`);
   };
 
@@ -131,6 +205,32 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
       } else {
         toast.error('Please upload an authorization form');
       }
+    }
+  };
+
+  const handleNotificationClick = (alert: Alert) => {
+    setSelectedNotification(alert);
+    setNotificationDetailOpen(true);
+  };
+
+  const handleDeleteNotification = (alertId: string) => {
+    const updatedAlerts = alerts.filter(a => a.id !== alertId);
+    setAlerts(updatedAlerts);
+    toast.success('Notification deleted');
+    setNotificationDetailOpen(false);
+  };
+
+  const handleDownloadDocument = (doc: PatientDocument) => {
+    if (doc.url) {
+      // Create a temporary link element and trigger download
+      const link = document.createElement('a');
+      link.href = doc.url;
+      link.download = doc.name + '.pdf';
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success(`Downloading ${doc.name}`);
     }
   };
 
@@ -159,11 +259,44 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
       status: 'Active',
       lastSeen: '2025-10-18',
       shared: 'Request Needed'
+    },
+    {
+      id: '1',
+      name: 'Sam Smith',
+      patientId: 'xxx-xxx',
+      status: 'Active',
+      lastSeen: '2025-10-15',
+      shared: 'Request Sent'
     }
   ]);
 
+  // Mock documents for patients
+  const patientDocuments: PatientDocument[] = [
+    {
+      id: '1',
+      name: 'Lab Results - CBC',
+      type: 'Lab Test',
+      date: '10/15/2024',
+      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+    },
+    {
+      id: '2',
+      name: 'Prescription - Lisinopril',
+      type: 'Medication',
+      date: '10/12/2024',
+      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+    },
+    {
+      id: '3',
+      name: 'Visit Notes',
+      type: 'Clinical Note',
+      date: '10/10/2024',
+      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+    }
+  ];
+
   // Mock data for permissions
-  const [permissions] = useState<Permission[]>([
+  const [permissions, setPermissions] = useState<Permission[]>([
     {
       id: '1',
       patient: 'John Doe',
@@ -188,7 +321,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
   ]);
 
   // Mock data for alerts
-  const [alerts] = useState<Alert[]>([
+  const [alerts, setAlerts] = useState<Alert[]>([
     {
       id: '1',
       type: 'data',
@@ -212,13 +345,18 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
     }
   ]);
 
-  const filteredPatients = patients.filter(patient =>
-    patient.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Apply filters
+  const filteredPatients = patients.filter(patient => {
+    const matchesSearch = patient.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter.includes(patient.status);
+    return matchesSearch && matchesStatus;
+  });
 
-  const filteredPermissions = permissions.filter(permission =>
-    permission.patient.toLowerCase().includes(permissionSearch.toLowerCase())
-  );
+  const filteredPermissions = permissions.filter(permission => {
+    const matchesSearch = permission.patient.toLowerCase().includes(permissionSearch.toLowerCase());
+    const matchesStatus = permissionStatusFilter.includes(permission.status);
+    return matchesSearch && matchesStatus;
+  });
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -242,11 +380,15 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-3">
-        <Tabs defaultValue="connected" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6">
+        <Tabs defaultValue="overview" className="w-full">
+          <TabsList className="grid w-full grid-cols-4 mb-6">
+            <TabsTrigger value="overview" className="gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Overview
+            </TabsTrigger>
             <TabsTrigger value="connected" className="gap-2">
               <Folder className="w-4 h-4" />
-              Connected Patients
+              Patients
             </TabsTrigger>
             <TabsTrigger value="permissions" className="gap-2">
               <Shield className="w-4 h-4" />
@@ -257,6 +399,104 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
               Request Access
             </TabsTrigger>
           </TabsList>
+
+          {/* Overview Tab */}
+          <TabsContent value="overview" className="mt-0 space-y-4">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="bg-white border-l-4 border-l-blue-500">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Total Patients</p>
+                      <h3 className="text-3xl mt-1">{patients.length}</h3>
+                      <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                        <TrendingUp className="w-3 h-3" />
+                        <span>2 new this week</span>
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <Users className="w-6 h-6 text-blue-600" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white border-l-4 border-l-green-500">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Active Patients</p>
+                      <h3 className="text-3xl mt-1">{patients.filter(p => p.status === 'Active').length}</h3>
+                      <p className="text-xs text-gray-600 mt-2">
+                        {Math.round((patients.filter(p => p.status === 'Active').length / patients.length) * 100)}% of total
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                      <Activity className="w-6 h-6 text-green-600" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white border-l-4 border-l-yellow-500">
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Pending Requests</p>
+                      <h3 className="text-3xl mt-1">{permissions.filter(p => p.status === 'Requested').length}</h3>
+                      <p className="text-xs text-yellow-600 mt-2">
+                        Requires attention
+                      </p>
+                    </div>
+                    <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
+                      <Bell className="w-6 h-6 text-yellow-600" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Recent Activity */}
+            <Card className="bg-white">
+              <CardHeader>
+                <CardTitle>Recent Activity</CardTitle>
+                <CardDescription>Latest updates from your patients</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3 pb-3 border-b">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+                    <div className="flex-1">
+                      <p className="text-sm">New lab results shared by <span className="font-medium">John Doe</span></p>
+                      <p className="text-xs text-gray-500 mt-1">2 hours ago</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 pb-3 border-b">
+                    <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
+                    <div className="flex-1">
+                      <p className="text-sm">Access granted to imaging records for <span className="font-medium">Liam Chen</span></p>
+                      <p className="text-xs text-gray-500 mt-1">5 hours ago</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 pb-3 border-b">
+                    <div className="w-2 h-2 bg-yellow-500 rounded-full mt-2"></div>
+                    <div className="flex-1">
+                      <p className="text-sm">New access request from <span className="font-medium">Noah Johnson</span></p>
+                      <p className="text-xs text-gray-500 mt-1">1 day ago</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full mt-2"></div>
+                    <div className="flex-1">
+                      <p className="text-sm">Patient profile updated for <span className="font-medium">John Doe</span></p>
+                      <p className="text-xs text-gray-500 mt-1">2 days ago</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           {/* Connected Patients Tab */}
           <TabsContent value="connected" className="mt-0">
@@ -276,10 +516,42 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                       className="pl-9 bg-gray-100"
                     />
                   </div>
-                  <Button variant="outline" className="bg-gray-100">
-                    <Filter className="w-4 h-4 mr-2" />
-                    Filter
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="bg-gray-100">
+                        <Filter className="w-4 h-4 mr-2" />
+                        Filter
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuLabel>Status</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuCheckboxItem
+                        checked={statusFilter.includes('Active')}
+                        onCheckedChange={(checked) => {
+                          setStatusFilter(prev => 
+                            checked 
+                              ? [...prev, 'Active'] 
+                              : prev.filter(s => s !== 'Active')
+                          );
+                        }}
+                      >
+                        Active
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuCheckboxItem
+                        checked={statusFilter.includes('Inactive')}
+                        onCheckedChange={(checked) => {
+                          setStatusFilter(prev => 
+                            checked 
+                              ? [...prev, 'Inactive'] 
+                              : prev.filter(s => s !== 'Inactive')
+                          );
+                        }}
+                      >
+                        Inactive
+                      </DropdownMenuCheckboxItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
 
                 {/* Table */}
@@ -303,10 +575,12 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                           <td className="p-3 text-sm">{getStatusBadge(patient.status)}</td>
                           <td className="p-3 text-sm text-gray-600">{patient.lastSeen}</td>
                           <td className="p-3 text-sm">
-                            {patient.shared === 'Connected' ? (
+                            {patient.shared === "Connected" ? (
                               <span className="text-gray-900">{patient.shared}</span>
-                            ) : (
+                            ) : patient.shared === "Request Sent" ? (
                               <span className="text-yellow-600">{patient.shared}</span>
+                            ) : (
+                              <span className="text-red-600">{patient.shared}</span>
                             )}
                           </td>
                           <td className="p-3 text-sm">
@@ -356,10 +630,54 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                       className="pl-9 bg-gray-100"
                     />
                   </div>
-                  <Button variant="outline" className="bg-gray-100">
-                    <Filter className="w-4 h-4 mr-2" />
-                    Filter
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="bg-gray-100">
+                        <Filter className="w-4 h-4 mr-2" />
+                        Filter
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuLabel>Status</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuCheckboxItem
+                        checked={permissionStatusFilter.includes('Granted')}
+                        onCheckedChange={(checked) => {
+                          setPermissionStatusFilter(prev => 
+                            checked 
+                              ? [...prev, 'Granted'] 
+                              : prev.filter(s => s !== 'Granted')
+                          );
+                        }}
+                      >
+                        Granted
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuCheckboxItem
+                        checked={permissionStatusFilter.includes('Revoked')}
+                        onCheckedChange={(checked) => {
+                          setPermissionStatusFilter(prev => 
+                            checked 
+                              ? [...prev, 'Revoked'] 
+                              : prev.filter(s => s !== 'Revoked')
+                          );
+                        }}
+                      >
+                        Revoked
+                      </DropdownMenuCheckboxItem>
+                      <DropdownMenuCheckboxItem
+                        checked={permissionStatusFilter.includes('Requested')}
+                        onCheckedChange={(checked) => {
+                          setPermissionStatusFilter(prev => 
+                            checked 
+                              ? [...prev, 'Requested'] 
+                              : prev.filter(s => s !== 'Requested')
+                          );
+                        }}
+                      >
+                        Requested
+                      </DropdownMenuCheckboxItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
 
                 {/* Table */}
@@ -388,7 +706,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                                   size="sm" 
                                   variant="outline" 
                                   className="bg-gray-100"
-                                  onClick={() => handleRevokePermission(permission.patient, permission.file)}
+                                  onClick={() => handleRevokePermission(permission.id, permission.patient, permission.file)}
                                 >
                                   Revoke
                                 </Button>
@@ -398,7 +716,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                                   size="sm" 
                                   variant="outline" 
                                   className="bg-gray-100"
-                                  onClick={() => handleGrantPermission(permission.patient, permission.file)}
+                                  onClick={() => handleGrantPermission(permission.id, permission.patient, permission.file)}
                                 >
                                   Grant
                                 </Button>
@@ -409,7 +727,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                                     size="sm" 
                                     variant="outline" 
                                     className="bg-gray-100"
-                                    onClick={() => handleGrantPermission(permission.patient, permission.file)}
+                                    onClick={() => handleGrantPermission(permission.id, permission.patient, permission.file)}
                                   >
                                     Grant
                                   </Button>
@@ -417,7 +735,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                                     size="sm" 
                                     variant="outline" 
                                     className="bg-gray-100"
-                                    onClick={() => handleRevokePermission(permission.patient, permission.file)}
+                                    onClick={() => handleRevokePermission(permission.id, permission.patient, permission.file)}
                                   >
                                     Deny
                                   </Button>
@@ -592,16 +910,17 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
           </CardHeader>
           <CardContent className="space-y-3">
             {alerts.map((alert) => (
-              <div
+              <button
                 key={alert.id}
-                className="bg-gray-100 rounded-lg p-3 space-y-1"
+                onClick={() => handleNotificationClick(alert)}
+                className="w-full bg-gray-100 rounded-lg p-3 space-y-1 hover:bg-gray-200 transition-colors text-left"
               >
                 <div className="flex items-start justify-between">
                   <p className="text-sm">{alert.title}</p>
                   <span className="text-xs text-gray-500">{alert.timestamp}</span>
                 </div>
                 <p className="text-xs text-gray-600">{alert.description}</p>
-              </div>
+              </button>
             ))}
           </CardContent>
         </Card>
@@ -614,7 +933,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
         <DialogHeader>
           <DialogTitle>Patient Records - {selectedPatient?.name}</DialogTitle>
           <DialogDescription>
-            View all shared records for this patient
+            Click on any document to view it
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -625,24 +944,37 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                   <th className="text-left p-3 text-sm">Document</th>
                   <th className="text-left p-3 text-sm">Type</th>
                   <th className="text-left p-3 text-sm">Date</th>
+                  <th className="text-left p-3 text-sm">Action</th>
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-t">
-                  <td className="p-3 text-sm">Lab Results - CBC</td>
-                  <td className="p-3 text-sm text-gray-600">Lab Test</td>
-                  <td className="p-3 text-sm text-gray-600">10/15/2024</td>
-                </tr>
-                <tr className="border-t">
-                  <td className="p-3 text-sm">Prescription - Lisinopril</td>
-                  <td className="p-3 text-sm text-gray-600">Medication</td>
-                  <td className="p-3 text-sm text-gray-600">10/12/2024</td>
-                </tr>
-                <tr className="border-t">
-                  <td className="p-3 text-sm">Visit Notes</td>
-                  <td className="p-3 text-sm text-gray-600">Clinical Note</td>
-                  <td className="p-3 text-sm text-gray-600">10/10/2024</td>
-                </tr>
+                {patientDocuments.map((doc) => (
+                  <tr key={doc.id} className="border-t hover:bg-gray-50 cursor-pointer">
+                    <td className="p-3 text-sm">{doc.name}</td>
+                    <td className="p-3 text-sm text-gray-600">{doc.type}</td>
+                    <td className="p-3 text-sm text-gray-600">{doc.date}</td>
+                    <td className="p-3 text-sm">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleViewDocument(doc)}
+                        className="gap-2"
+                      >
+                        <Eye className="w-4 h-4" />
+                        View
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDownloadDocument(doc)}
+                        className="gap-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -650,57 +982,245 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
         </DialogContent>
       </Dialog>
 
-      {/* Add Data Dialog */}
+      {/* PDF Viewer Dialog */}
+      <Dialog open={pdfViewerOpen} onOpenChange={setPdfViewerOpen}>
+        <DialogContent className="max-w-[90vw] h-[90vh] flex flex-col">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle>{selectedDocument?.name}</DialogTitle>
+                <DialogDescription>
+                  Document from {selectedDocument?.date}
+                </DialogDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => selectedDocument && handleDownloadDocument(selectedDocument)}
+                className="gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Download
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden">
+            <iframe
+              src={selectedDocument?.url}
+              className="w-full h-full border-0 rounded-lg"
+              title="Document Viewer"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Notification Detail Dialog */}
+      <Dialog open={notificationDetailOpen} onOpenChange={setNotificationDetailOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedNotification?.title}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600">
+                <span className="text-gray-900">Type:</span> {selectedNotification?.type}
+              </p>
+              <p className="text-sm text-gray-600">
+                <span className="text-gray-900">Time:</span> {selectedNotification?.timestamp}
+              </p>
+              <p className="text-sm text-gray-600">
+                <span className="text-gray-900">Details:</span> {selectedNotification?.description}
+              </p>
+            </div>
+            <div className="flex gap-2 pt-4">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setNotificationDetailOpen(false)}
+              >
+                Close
+              </Button>
+              <Button
+                variant="destructive"
+                className="flex-1"
+                onClick={() => selectedNotification && handleDeleteNotification(selectedNotification.id)}
+              >
+                <X className="w-4 h-4 mr-2" />
+                Delete
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Data Dialog with Upload/Manual Entry Toggle */}
       <Dialog open={addDataDialogOpen} onOpenChange={setAddDataDialogOpen}>
-      <DialogContent>
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Add Data for {selectedPatient?.name}</DialogTitle>
+          <DialogTitle>Add Health Records</DialogTitle>
           <DialogDescription>
-            Upload medical records or documents for this patient
+            Import FHIR-compliant records or manually add new health information
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="document-type">Document Type</Label>
-            <Select>
-              <SelectTrigger>
-                <SelectValue placeholder="Select document type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="lab">Lab Results</SelectItem>
-                <SelectItem value="imaging">Imaging</SelectItem>
-                <SelectItem value="prescription">Prescription</SelectItem>
-                <SelectItem value="visit">Visit Notes</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="file-upload">Upload File</Label>
-            <Input
-              id="file-upload"
-              type="file"
-              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-              onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
-            />
-            {uploadFile && (
-              <p className="text-sm text-gray-600">Selected: {uploadFile.name}</p>
-            )}
+          {/* Toggle between Upload and Manual Entry */}
+          <div className="flex gap-1 bg-gray-200 rounded-lg p-1">
+            <button
+              onClick={() => setAddDataMethod('upload')}
+              className={`flex-1 py-2 px-4 rounded-md transition-colors text-sm ${
+                addDataMethod === 'upload'
+                  ? 'bg-white shadow-sm'
+                  : 'bg-transparent text-gray-600'
+              }`}
+            >
+              ✓ Upload
+            </button>
+            <button
+              onClick={() => setAddDataMethod('manual')}
+              className={`flex-1 py-2 px-4 rounded-md transition-colors text-sm ${
+                addDataMethod === 'manual'
+                  ? 'bg-white shadow-sm'
+                  : 'bg-transparent text-gray-600'
+              }`}
+            >
+              Manual Entry
+            </button>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="notes">Notes (Optional)</Label>
-            <Textarea
-              id="notes"
-              placeholder="Add any additional notes..."
-              rows={3}
-            />
-          </div>
+          {addDataMethod === 'upload' ? (
+            // Upload Method
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="document-type">Document Type</Label>
+                <Select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select document type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lab">Lab Results</SelectItem>
+                    <SelectItem value="imaging">Imaging</SelectItem>
+                    <SelectItem value="prescription">Prescription</SelectItem>
+                    <SelectItem value="visit">Visit Notes</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="file-upload">Upload File</Label>
+                <Input
+                  id="file-upload"
+                  type="file"
+                  accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                  onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                />
+                {uploadFile && (
+                  <p className="text-sm text-gray-600">Selected: {uploadFile.name}</p>
+                )}
+              </div>
 
-          <Button onClick={handleUploadData} className="w-full">
-            Upload Data
-          </Button>
+              <div className="space-y-2">
+                <Label htmlFor="upload-notes">Notes (Optional)</Label>
+                <Textarea
+                  id="upload-notes"
+                  placeholder="Add any additional notes..."
+                  rows={3}
+                />
+              </div>
+
+              <Button onClick={handleUploadData} className="w-full">
+                Upload
+              </Button>
+            </div>
+          ) : (
+            // Manual Entry Method
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="record-type">Record Type</Label>
+                <Select value={manualRecordType} onValueChange={setManualRecordType}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lab">Lab Results</SelectItem>
+                    <SelectItem value="imaging">Imaging</SelectItem>
+                    <SelectItem value="prescription">Prescription</SelectItem>
+                    <SelectItem value="visit">Visit Notes</SelectItem>
+                    <SelectItem value="immunization">Immunization</SelectItem>
+                    <SelectItem value="allergy">Allergy</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="title">Name / Title</Label>
+                <Input
+                  id="title"
+                  placeholder="e.g., Annual Checkup, CBC Test"
+                  value={manualTitle}
+                  onChange={(e) => setManualTitle(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Description / Dosage</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Enter description or dosage information"
+                  rows={3}
+                  value={manualDescription}
+                  onChange={(e) => setManualDescription(e.target.value)}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="record-date">Record Date</Label>
+                  <Input
+                    id="record-date"
+                    type="date"
+                    value={manualRecordDate}
+                    onChange={(e) => setManualRecordDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="visit-date">Date of Visit</Label>
+                  <Input
+                    id="visit-date"
+                    type="date"
+                    value={manualVisitDate}
+                    onChange={(e) => setManualVisitDate(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="provider-name">Provider Name</Label>
+                <Input
+                  id="provider-name"
+                  placeholder="Enter provider name"
+                  value={manualProviderName}
+                  onChange={(e) => setManualProviderName(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="additional-notes">Additional Notes</Label>
+                <Textarea
+                  id="additional-notes"
+                  placeholder="Any additional information..."
+                  rows={3}
+                  value={manualNotes}
+                  onChange={(e) => setManualNotes(e.target.value)}
+                />
+              </div>
+
+              <Button onClick={handleUploadData} className="w-full">
+                Upload
+              </Button>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

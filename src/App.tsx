@@ -46,6 +46,8 @@ import {
   Bell
 } from 'lucide-react';
 import { Alert, AlertDescription } from './components/ui/alert';
+import backgroundImage from "./assets/background_image.png";
+import patientLogo from './assets/patient_logo.png';
 
 interface UserData {
   email: string;
@@ -85,6 +87,7 @@ export default function App() {
 
   const handleLogout = () => {
     setUser(null);
+    setSelectedRole(null);
     setCurrentView('dashboard');
   };
 
@@ -104,9 +107,11 @@ export default function App() {
             {/* Left side: logo, heading, buttons */}
             <div className="p-8 md:p-10 flex flex-col justify-center gap-6">
               <div className="space-y-1">
-                <p className="text-sm font-medium text-gray-500 tracking-wide">
-                  PatientSide
-                </p>
+                <img 
+                  src={patientLogo} 
+                  alt="PatientSide logo" 
+                  className="h-12 w-auto mb-auto" 
+                />
                 <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">
                   Choose your role
                 </h1>
@@ -118,14 +123,15 @@ export default function App() {
               <div className="space-y-3">
                 <Button
                   variant="outline"
-                  className="w-full justify-center py-3 text-sm font-medium hover:bg-gray-100"
+                  className="w-full justify-start py-4 px-4 rounded-s border border-gray-300"
                   onClick={() => setSelectedRole('patient')}
                 >
                   I&apos;m a patient
                 </Button>
+
                 <Button
                   variant="outline"
-                  className="w-full justify-center py-3 text-sm font-medium hover:bg-gray-100"
+                  className="w-full justify-start py-4 px-4 rounded-s border border-gray-300"
                   onClick={() => setSelectedRole('provider')}
                 >
                   I&apos;m a healthcare provider
@@ -134,11 +140,10 @@ export default function App() {
             </div>
 
             {/* Right side: image area */}
-            <div className="hidden md:block bg-gray-200">
-              {/* Replace this with your actual image asset / URL */}
+            <div className="hidden md:block bg-gray-200 h-full">
               <div
                 className="h-full w-full bg-cover bg-center"
-                style={{ backgroundImage: "url('/role-select-hero.png')" }}
+                style={{ backgroundImage: `url(${backgroundImage})` }}
               />
             </div>
           </div>
@@ -164,9 +169,11 @@ export default function App() {
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl text-gray-900">
-              {user.role === 'patient' ? 'Patient Side' : 'Healthcare Provider'}
-            </h1>
+              <img 
+                src={patientLogo} 
+                alt="PatientSide logo" 
+                className="h-12 w-auto mb-auto" 
+              />
             <div className="flex items-center gap-4">
               {user.role === 'patient' && (
                 <>
@@ -189,6 +196,9 @@ export default function App() {
                   </Button>
                 </>
               )}
+
+              <h1 className="text-m font-semibold" style={{ color: '#2978dfff' }} > {user.name}</h1>
+
               {user.role === 'patient' ? (
                 <Button
                   variant="ghost"
@@ -215,6 +225,9 @@ export default function App() {
                       <div className="flex flex-col space-y-1">
                         <p className="text-sm">{user.name}</p>
                         <p className="text-xs text-gray-500">{user.email}</p>
+                        <p className="text-s text-gray-900">
+                          {user.role === 'patient' ? 'Patient Side' : 'Healthcare Provider'}
+                        </p>
                       </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
@@ -325,6 +338,7 @@ export default function App() {
                 <ProfilePage
                   userName={user.name}
                   userEmail={user.email}
+                  userRole={user.role}
                   onLogout={handleLogout}
                   onBack={() => setCurrentView('dashboard')}
                 />
@@ -414,7 +428,7 @@ export default function App() {
         <div className="container mx-auto px-6 py-6">
           <div className="text-center text-sm text-gray-600">
             <p>
-              Patient Side Storage System • FHIR R4 Compatible • Privacy-First Design
+              PatientSide Storage System • FHIR R4 Compatible • Privacy-First Design
             </p>
           </div>
         </div>
