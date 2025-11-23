@@ -169,88 +169,93 @@ export default function App() {
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-              <img 
-                src={patientLogo} 
-                alt="PatientSide logo" 
-                className="h-12 w-auto mb-auto" 
-              />
+            {/* Logo */}
+            <img
+              src={patientLogo}
+              alt="PatientSide logo"
+              className="h-12 w-auto mb-auto"
+            />
+
             <div className="flex items-center gap-4">
+              {/* Export only for patients */}
               {user.role === 'patient' && (
-                <>
-                  <Button 
-                    onClick={() => setSummaryOpen(true)}
-                    variant="outline"
-                    size="sm"
-                  >
-                    Export Health Summary
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="relative"
-                    onClick={() => setCurrentView('notifications')}
-                  >
-                    <Bell className="w-5 h-5" />
-                    {/* Notification badge */}
-                    <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
-                  </Button>
-                </>
-              )}
-
-              <h1 className="text-m font-semibold" style={{ color: '#2978dfff' }} > {user.name}</h1>
-
-              {user.role === 'patient' ? (
                 <Button
-                  variant="ghost"
+                  onClick={() => setSummaryOpen(true)}
+                  variant="outline"
                   size="sm"
-                  className="rounded-full w-10 h-10 p-0"
-                  onClick={() => setCurrentView('profile')}
                 >
-                  <UserCircle className="w-6 h-6" />
+                  Export Health Summary
                 </Button>
-              ) : (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <Avatar className="w-10 h-10 cursor-pointer">
-                        <AvatarImage src="" alt={user.name} />
-                        <AvatarFallback className="bg-blue-600 text-white">
-                          {user.name.split(' ').map(n => n[0]).join('').toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel>
-                      <div className="flex flex-col space-y-1">
-                        <p className="text-sm">{user.name}</p>
-                        <p className="text-xs text-gray-500">{user.email}</p>
-                        <p className="text-s text-gray-900">
-                          {user.role === 'patient' ? 'Patient Side' : 'Healthcare Provider'}
-                        </p>
-                      </div>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setCurrentView('profile')}>
-                      <UserCircle className="mr-2 h-4 w-4" />
-                      <span>Profile</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setCurrentView('settings')}>
-                      <Settings className="mr-2 h-4 w-4" />
-                      <span>Settings</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleLogout}>
-                      <LogOut className="mr-2 h-4 w-4" />
-                      <span>Logout</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
               )}
+
+              {/* Notifications for BOTH */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="relative"
+                onClick={() => setCurrentView('notifications')}
+              >
+                <Bell className="w-5 h-5" />
+                <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full" />
+              </Button>
+
+              {/* Username */}
+              <span className="text-sm font-semibold" style={{ color: '#3374caff' }}>
+                {user.name}
+              </span>
+
+              {/* Profile dropdown (patients + providers, same icon) */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="
+                      rounded-full w-10 h-10 flex items-center justify-center
+                       text-[#3374caff]
+                      hover:bg-blue-100
+                      focus:outline-none focus:ring-2 focus:ring-blue-500
+                    "
+                  >
+                    <UserCircle className="w-5 h-5" />
+                  </button>
+                </DropdownMenuTrigger>
+
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm">{user.name}</p>
+                      <p className="text-xs text-gray-500">{user.email}</p>
+                      <p className="text-xs text-gray-900">
+                        {user.role === 'patient' ? 'Patient Side' : 'Healthcare Provider'}
+                      </p>
+                    </div>
+                  </DropdownMenuLabel>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem onClick={() => setCurrentView('profile')}>
+                    <UserCircle className="mr-2 h-4 w-4" />
+                    <span>Profile</span>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem onClick={() => setCurrentView('settings')}>
+                    <Settings className="mr-2 h-4 w-4" />
+                    <span>Settings</span>
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator />
+
+                  <DropdownMenuItem onClick={handleLogout}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Logout</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </div>
       </header>
+
 
       {/* Main Content */}
       <main className="container mx-auto px-6 py-6">
