@@ -89,12 +89,12 @@ export function ProfilePage({ userName, userEmail, onLogout, onBack, userRole }:
         </Button>
       </div>
 
-      {/* Patient Information */}
+      {/* Patient/Provider Information */}
       <Card className="bg-white">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <User className="w-5 h-5" />
-            Patient Information
+            {userRole === 'provider' ? 'Provider Information' : 'Patient Information'}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
