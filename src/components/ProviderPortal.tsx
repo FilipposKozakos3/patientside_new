@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Button } from './ui/button';
@@ -57,7 +57,9 @@ interface ProviderPortalProps {
   providerName: string;
   providerEmail: string;
   onLogout: () => void;
+  onAlertsChange: (alerts: Alert[]) => void;
 }
+
 
 interface ConnectedPatient {
   id: string;
@@ -92,7 +94,7 @@ interface PatientDocument {
   url?: string;
 }
 
-export function ProviderPortal({ providerName, providerEmail, onLogout }: ProviderPortalProps) {
+export function ProviderPortal({ providerName, providerEmail, onLogout, onAlertsChange }: ProviderPortalProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [permissionSearch, setPermissionSearch] = useState('');
   const [requestMethod, setRequestMethod] = useState<'manual' | 'file'>('manual');
@@ -345,6 +347,12 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
     }
   ]);
 
+    useEffect(() => {
+    // Push current ProviderPortal alerts up to App
+    onAlertsChange(alerts);
+  }, [alerts, onAlertsChange]);
+
+
   // Apply filters
   const filteredPatients = patients.filter(patient => {
     const matchesSearch = patient.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -377,9 +385,9 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
 
   return (
     <>
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="w-full flex justify-center">
         {/* Main Content */}
-        <div className="lg:col-span-3">
+        <div className="w-full max-w-6xl px-6">
         <Tabs defaultValue="overview" className="w-full">
           <TabsList className="grid w-full grid-cols-4 mb-6">
             <TabsTrigger value="overview" className="gap-2">
@@ -899,7 +907,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
         </Tabs>
       </div>
 
-      {/* Right Sidebar - Alerts */}
+      {/* Right Sidebar - Alerts
       <div className="space-y-6">
         <Card className="bg-white">
           <CardHeader>
@@ -925,6 +933,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
           </CardContent>
         </Card>
         </div>
+      </div> */}
       </div>
 
       {/* View Patient Dialog */}

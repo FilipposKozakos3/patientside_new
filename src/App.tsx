@@ -65,6 +65,8 @@ export default function App() {
   const [consentOpen, setConsentOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  const [providerAlerts, setProviderAlerts] = useState([]);
+
 
   const handleRefresh = () => {
     setRefreshTrigger(prev => prev + 1);
@@ -265,6 +267,7 @@ export default function App() {
             providerName={user.name}
             providerEmail={user.email}
             onLogout={handleLogout}
+            onAlertsChange={setProviderAlerts}
           />
         ) : (
           <div className={`grid grid-cols-1 ${currentView !== 'profile' && currentView !== 'notifications' ? 'lg:grid-cols-4' : ''} gap-6`}>
@@ -380,6 +383,7 @@ export default function App() {
               {currentView === 'notifications' && (
                 <NotificationsPage
                   onBack={() => setCurrentView('dashboard')}
+                  alerts={providerAlerts}
                 />
               )}
             </div>
