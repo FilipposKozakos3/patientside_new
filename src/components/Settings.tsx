@@ -1,3 +1,10 @@
+// added this
+//const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const FUNCTIONS_BASE_URL = 'https://tdqqldpijfutzdspszil.functions.supabase.co';
+
+
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -18,6 +25,12 @@ import {
   EyeOff
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
+
+// added import statement
+import { supabase } from '../supabase/supabaseClient';
+
+// const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+//const FUNCTIONS_BASE_URL = 'https://tdqqldpijfutzdspszil.functions.supabase.co';
 
 interface SettingsProps {
   currentEmail: string;
@@ -88,19 +101,97 @@ export function Settings({ currentEmail, currentName, userRole, onEmailChange, o
     setShowPasswordChange(false);
   };
 
-  const handleDeleteAccount = () => {
-    if (confirm('Are you sure you want to delete your account? This action cannot be undone and all your health records will be permanently deleted.')) {
-      if (confirm('This is your final warning. Are you absolutely sure?')) {
-        // Clear all local storage
-        localStorage.clear();
-        toast.success('Account deleted successfully');
-        // Logout
-        setTimeout(() => {
-          onLogout();
-        }, 1000);
-      }
+  // delete account functionality
+
+  const handleDeleteAccount = async () => {
+  const firstConfirm = window.confirm(
+    'Are you sure you want to delete your account? This action cannot be undone and all your health records will be permanently deleted.'
+  );
+  if (!firstConfirm) return;
+
+  const finalConfirm = window.confirm(
+    'This is your final warning. Are you absolutely sure?'
+  );
+  if (!finalConfirm) return;
+
+  try {
+    // 1) Get current logged-in user
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      console.error('getUser error:', error);
+      toast.error('Could not find current user. Please try logging in again.');
+      return;
     }
-  };
+
+    // 2) Call backend delete-account route
+    const res = await fetch(
+      `${FUNCTIONS_BASE_URL}/make-server-81652b55/delete-account`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // These headers are just for simple protection; backend still uses env keys
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ userId: user.id }),
+      }
+    );
+
+    const text = await res.text();
+    let body: any = {};
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      // non-JSON response, leave body = {}
+    }
+
+    if (!res.ok || body?.error) {
+      console.error('delete-account error:', res.status, body);
+      const message =
+        (body && typeof body.error === 'string' && body.error) ||
+        `Failed to delete account (status ${res.status}).`;
+      toast.error(message);
+      return;
+    }
+
+    // 3) Sign out & forget remembered email
+    await supabase.auth.signOut();
+    localStorage.removeItem('lastEmail');
+
+    toast.success('Account deleted successfully');
+
+    // 4) Go back to login screen
+    setTimeout(() => {
+      onLogout();
+    }, 1000);
+  } catch (err) {
+    console.error('delete-account unexpected error:', err);
+    toast.error('Unexpected error while deleting your account. Please try again.');
+  }
+};
+
+
+
+
+  // ---- commented out : delete account functionality 11/24/2025 ---
+  // const handleDeleteAccount = () => {
+  //   if (confirm('Are you sure you want to delete your account? This action cannot be undone and all your health records will be permanently deleted.')) {
+  //     if (confirm('This is your final warning. Are you absolutely sure?')) {
+  //       // Clear all local storage
+  //       localStorage.clear();
+  //       toast.success('Account deleted successfully');
+  //       // Logout
+  //       setTimeout(() => {
+  //         onLogout();
+  //       }, 1000);
+  //     }
+  //   }
+  // };
 
   return (
     <div className="space-y-6 max-w-4xl">
