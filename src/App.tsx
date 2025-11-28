@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { StoredHealthRecord } from './types/fhir';
 import { Auth } from './components/Auth';
 import { Dashboard } from './components/Dashboard';
@@ -49,6 +49,16 @@ import { Alert, AlertDescription } from './components/ui/alert';
 import backgroundImage from "./assets/background_image.png";
 import patientLogo from './assets/patient_logo.png';
 
+
+interface Alert {
+  id: string;
+  type: 'data' | 'access' | 'permission';
+  title: string;
+  description: string;
+  timestamp: string;
+}
+
+
 interface UserData {
   email: string;
   role: string;
@@ -65,6 +75,10 @@ export default function App() {
   const [consentOpen, setConsentOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  const [providerAlerts, setProviderAlerts] = useState<Alert[]>([]);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+  const [lastSeenAlertCount, setLastSeenAlertCount] = useState(0);
+
 
   const handleRefresh = () => {
     setRefreshTrigger(prev => prev + 1);
@@ -94,6 +108,33 @@ export default function App() {
   const handleNavigate = (view: string) => {
     setCurrentView(view);
   };
+
+  const handleProviderAlertsChange = (alerts: Alert[]) => {
+    setProviderAlerts(alerts);
+    // red dot if there are more alerts than the user has seen
+    setHasUnreadNotifications(alerts.length > lastSeenAlertCount);
+  };
+
+
+  useEffect(() => {
+    // Red dot if there are more alerts than the user has seen
+    setHasUnreadNotifications(providerAlerts.length > lastSeenAlertCount);
+  }, [providerAlerts.length, lastSeenAlertCount]);
+
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem('lastSeenAlertCount');
+    if (stored) {
+      const parsed = parseInt(stored, 10);
+      if (!isNaN(parsed)) {
+        setLastSeenAlertCount(parsed);
+      }
+    }
+  }, []);
+
+
+
 
   // Entry flow:
   // 1) No user & no role → show role selection
@@ -193,11 +234,25 @@ export default function App() {
                 variant="ghost"
                 size="sm"
                 className="relative"
-                onClick={() => setCurrentView('notifications')}
+                onClick={() => {
+                  setCurrentView('notifications');
+
+                  // mark all current alerts as seen
+                  const seenCount = providerAlerts.length;
+                  setLastSeenAlertCount(seenCount);
+                  setHasUnreadNotifications(false);
+
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.setItem('lastSeenAlertCount', String(seenCount));
+                  }
+                }}
               >
                 <Bell className="w-5 h-5" />
-                <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full" />
+                {hasUnreadNotifications && (
+                  <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full" />
+                )}
               </Button>
+
 
               {/* Username */}
               <span className="text-sm font-semibold" style={{ color: '#3374caff' }}>
@@ -265,6 +320,7 @@ export default function App() {
             providerName={user.name}
             providerEmail={user.email}
             onLogout={handleLogout}
+            onAlertsChange={handleProviderAlertsChange}
           />
         ) : (
           <div className={`grid grid-cols-1 ${currentView !== 'profile' && currentView !== 'notifications' ? 'lg:grid-cols-4' : ''} gap-6`}>
@@ -380,6 +436,7 @@ export default function App() {
               {currentView === 'notifications' && (
                 <NotificationsPage
                   onBack={() => setCurrentView('dashboard')}
+                  alerts={providerAlerts}
                 />
               )}
             </div>
