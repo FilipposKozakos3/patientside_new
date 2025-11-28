@@ -92,6 +92,8 @@ interface PatientDocument {
   date: string;
   url?: string;
   fileExtension?: string; // Store original file extension for downloads
+  patientId: string; // Associate document with a specific patient
+  notes?: string; // Additional notes for the document
 }
 
 export function ProviderPortal({ providerName, providerEmail, onLogout }: ProviderPortalProps) {
@@ -109,6 +111,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [requestPatientName, setRequestPatientName] = useState('');
   const [uploadDocumentType, setUploadDocumentType] = useState<string | undefined>(undefined);
+  const [uploadNotes, setUploadNotes] = useState('');
   
   // Filter states
   const [statusFilter, setStatusFilter] = useState<string[]>(['Active', 'Inactive']);
@@ -242,7 +245,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
         return;
       }
       if (!uploadDocumentType) {
-        toast.error('Please select a document type');
+        toast.error('Please select a record type');
         return;
       }
       
@@ -265,7 +268,9 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
         type: typeMap[uploadDocumentType] || 'Other',
         date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
         url: URL.createObjectURL(uploadFile), // Create a local URL for the uploaded file
-        fileExtension: fileExtension // Store original file extension
+        fileExtension: fileExtension, // Store original file extension
+        patientId: selectedPatient?.id || '', // Associate with the selected patient
+        notes: uploadNotes || undefined // Store additional notes if provided
       };
       
       setPatientDocuments(prev => [newDocument, ...prev]);
@@ -301,7 +306,8 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
         type: typeMap[manualRecordType] || 'Other',
         date: recordDate,
         url: pdfUrl,
-        fileExtension: '.pdf'
+        fileExtension: '.pdf',
+        patientId: selectedPatient?.id || '' // Associate with the selected patient
       };
       
       setPatientDocuments(prev => [newDocument, ...prev]);
@@ -311,6 +317,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
     // Reset form
     setUploadFile(null);
     setUploadDocumentType(undefined);
+    setUploadNotes('');
     setManualRecordType(undefined);
     setManualTitle('');
     setManualDescription('');
@@ -470,27 +477,31 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
   ]);
 
   // Mock documents for patients - now stateful so we can add new documents
+  // Documents are stored with patientId to associate them with specific patients
   const [patientDocuments, setPatientDocuments] = useState<PatientDocument[]>([
     {
       id: '1',
       name: 'Lab Results - CBC',
       type: 'Lab Test',
       date: '10/15/2024',
-      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+      patientId: '1' // John Doe
     },
     {
       id: '2',
       name: 'Prescription - Lisinopril',
       type: 'Medication',
       date: '10/12/2024',
-      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+      patientId: '1' // John Doe
     },
     {
       id: '3',
       name: 'Visit Notes',
       type: 'Clinical Note',
       date: '10/10/2024',
-      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+      patientId: '2' // Liam Chen
     }
   ]);
 
@@ -964,9 +975,9 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                 {/* Manual Entry Form */}
                 <div className="space-y-4">
                     <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="requestPatientName">Patient Name</Label>
-                        <Input
+                <div className="space-y-2">
+                  <Label htmlFor="requestPatientName">Patient Name <span className="text-red-600" style={{ color: '#dc2626' }}>*</span></Label>
+                  <Input
                           id="requestPatientName"
                           placeholder="Enter patient name"
                           value={requestPatientName}
@@ -1086,7 +1097,9 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                 </tr>
               </thead>
               <tbody>
-                {patientDocuments.map((doc) => (
+                {patientDocuments
+                  .filter(doc => doc.patientId === selectedPatient?.id)
+                  .map((doc) => (
                   <tr key={doc.id} className="border-t hover:bg-gray-50 cursor-pointer">
                     <td className="p-3 text-sm">{doc.name}</td>
                     <td className="p-3 text-sm text-gray-600">{doc.type}</td>
@@ -1149,6 +1162,12 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
               title="Document Viewer"
             />
           </div>
+          {selectedDocument?.notes && (
+            <div className="bg-gray-50 p-4 rounded-lg border mt-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Additional Notes</h4>
+              <p className="text-sm text-gray-600 whitespace-pre-wrap">{selectedDocument.notes}</p>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -1211,7 +1230,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                   : 'bg-transparent text-gray-600'
               }`}
             >
-              ✓ Upload
+              Upload
             </button>
             <button
               onClick={() => setAddDataMethod('manual')}
@@ -1229,10 +1248,10 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
             // Upload Method
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="document-type">Document Type</Label>
+                <Label htmlFor="document-type">Record Type <span className="text-red-600" style={{ color: '#dc2626' }}>*</span></Label>
                 <Select value={uploadDocumentType} onValueChange={setUploadDocumentType}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select document type" />
+                    <SelectValue placeholder="Select record type" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="lab">Lab Results</SelectItem>
@@ -1245,7 +1264,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="file-upload">Upload File</Label>
+                <Label htmlFor="file-upload">Upload File <span className="text-red-600" style={{ color: '#dc2626' }}>*</span></Label>
                 <Input
                   id="file-upload"
                   type="file"
@@ -1258,11 +1277,13 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="upload-notes">Notes (Optional)</Label>
+                <Label htmlFor="upload-notes">Additional Notes (Optional)</Label>
                 <Textarea
                   id="upload-notes"
-                  placeholder="Add any additional notes..."
+                  placeholder="Enter any additional information"
                   rows={3}
+                  value={uploadNotes}
+                  onChange={(e) => setUploadNotes(e.target.value)}
                 />
               </div>
 
@@ -1272,12 +1293,22 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
             </div>
           ) : (
             // Manual Entry Method
-            <div className="space-y-4">
+            <div key="manual-entry" className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="record-type">Record Type</Label>
-                <Select value={manualRecordType} onValueChange={setManualRecordType}>
+                <Label htmlFor="title">Name / Title <span className="text-red-600" style={{ color: '#dc2626' }}>*</span></Label>
+                <Input
+                  id="title"
+                  placeholder="e.g., Annual Checkup, CBC Test"
+                  value={manualTitle ?? ''}
+                  onChange={(e) => setManualTitle(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="record-type">Record Type <span className="text-red-600" style={{ color: '#dc2626' }}>*</span></Label>
+                <Select value={manualRecordType ?? undefined} onValueChange={setManualRecordType}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
+                    <SelectValue placeholder="Select record type" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="lab">Lab Results</SelectItem>
@@ -1291,43 +1322,22 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="title">Name / Title</Label>
-                <Input
-                  id="title"
-                  placeholder="e.g., Annual Checkup, CBC Test"
-                  value={manualTitle}
-                  onChange={(e) => setManualTitle(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="description">Description / Dosage</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Enter description or dosage information"
-                  rows={3}
-                  value={manualDescription}
-                  onChange={(e) => setManualDescription(e.target.value)}
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="record-date">Record Date</Label>
-                  <Input
-                    id="record-date"
-                    type="date"
-                    value={manualRecordDate}
-                    onChange={(e) => setManualRecordDate(e.target.value)}
-                  />
+                <Input
+                  id="record-date"
+                  type="date"
+                  value={manualRecordDate ?? ''}
+                  onChange={(e) => setManualRecordDate(e.target.value)}
+                />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="visit-date">Date of Visit</Label>
                   <Input
                     id="visit-date"
                     type="date"
-                    value={manualVisitDate}
+                    value={manualVisitDate ?? ''}
                     onChange={(e) => setManualVisitDate(e.target.value)}
                   />
                 </div>
@@ -1338,18 +1348,29 @@ export function ProviderPortal({ providerName, providerEmail, onLogout }: Provid
                 <Input
                   id="provider-name"
                   placeholder="Enter provider name"
-                  value={manualProviderName}
+                  value={manualProviderName ?? ''}
                   onChange={(e) => setManualProviderName(e.target.value)}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="additional-notes">Additional Notes</Label>
+                <Label htmlFor="description">Description / Dosage</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Enter description or dosage information"
+                  rows={3}
+                  value={manualDescription ?? ''}
+                  onChange={(e) => setManualDescription(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="additional-notes">Additional Notes (Optional)</Label>
                 <Textarea
                   id="additional-notes"
-                  placeholder="Any additional information..."
+                  placeholder="Enter any additional information"
                   rows={3}
-                  value={manualNotes}
+                  value={manualNotes ?? ''}
                   onChange={(e) => setManualNotes(e.target.value)}
                 />
               </div>
