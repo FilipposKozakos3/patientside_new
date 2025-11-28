@@ -344,7 +344,9 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
       title: 'Permission',
       description: 'Emma Garcia revoked access to imaging folder',
       timestamp: 'X days ago'
-    }
+    },
+    
+
   ]);
 
     useEffect(() => {

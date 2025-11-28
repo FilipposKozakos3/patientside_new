@@ -24,31 +24,30 @@ interface NotificationsPageProps {
   alerts: Notification[];
 }
 
-const STORAGE_KEY = 'notificationsPageAlerts';
+const DISMISSED_KEY = 'notificationsDismissedIds';
 
 export function NotificationsPage({ onBack, alerts }: NotificationsPageProps) {
-  const [displayAlerts, setDisplayAlerts] = useState<Notification[]>(alerts);
+  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
-  // On first mount, load from localStorage if it exists; otherwise seed from props
+  // Load dismissed IDs from localStorage on mount
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = window.localStorage.getItem(DISMISSED_KEY);
     if (stored) {
       try {
-        const parsed = JSON.parse(stored) as Notification[];
-        setDisplayAlerts(parsed);
+        const parsed = JSON.parse(stored) as string[];
+        setDismissedIds(parsed);
       } catch {
-        setDisplayAlerts(alerts);
+        // if parsing fails, just ignore and start fresh
       }
-    } else {
-      setDisplayAlerts(alerts);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(alerts));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run only once on mount
+  }, []);
+
+  // Compute what to display: all alerts except dismissed ones
+  const displayAlerts = alerts.filter(alert => !dismissedIds.includes(alert.id));
 
   const handleNotificationClick = (alert: Notification) => {
     setSelectedNotification(alert);
@@ -58,12 +57,17 @@ export function NotificationsPage({ onBack, alerts }: NotificationsPageProps) {
   const handleDeleteNotification = () => {
     if (!selectedNotification) return;
 
-    const updated = displayAlerts.filter(a => a.id !== selectedNotification.id);
-    setDisplayAlerts(updated);
+    setDismissedIds(prev => {
+      const next = prev.includes(selectedNotification.id)
+        ? prev
+        : [...prev, selectedNotification.id];
 
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    }
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
+      }
+
+      return next;
+    });
 
     toast.success('Notification deleted');
     setDetailOpen(false);
