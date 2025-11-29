@@ -18,6 +18,7 @@ interface UploadRecordProps {
 export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string>('');
 
   // Manual entry state
   const [category, setCategory] = useState<StoredHealthRecord['category']>('medication');
@@ -30,9 +31,22 @@ export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
     additionalInfo: ''
   });
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (file) {
+      setSelectedFileName(file.name);
+    }
+  };
+
+  const handleFileUpload = async () => {
+    const file = fileInputRef.current?.files?.[0];
+    if (!file) {
+      setUploadStatus({
+        type: 'error',
+        message: 'Please select a file first'
+      });
+      return;
+    }
 
     try {
       const fileExtension = file.name.split('.').pop()?.toLowerCase();
@@ -125,6 +139,7 @@ export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+      setSelectedFileName('');
     } catch (error) {
       setUploadStatus({
         type: 'error',
@@ -307,58 +322,73 @@ export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Add Health Records</CardTitle>
-        <CardDescription>
+    <Card className="bg-white shadow-sm">
+      <CardHeader className="pb-4">
+        <CardTitle className="text-xl font-semibold text-gray-900">Add Health Records</CardTitle>
+        <CardDescription className="mt-1">
           Import FHIR-compliant records or manually add new health information
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="pt-0">
         <Tabs defaultValue="upload">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="upload">
-              <Upload className="w-4 h-4 mr-2" />
+          <TabsList className="grid w-full grid-cols-2 mb-6">
+            <TabsTrigger value="upload" className="gap-2">
+              <Upload className="w-4 h-4" />
               Upload File
             </TabsTrigger>
-            <TabsTrigger value="manual">
-              <Plus className="w-4 h-4 mr-2" />
+            <TabsTrigger value="manual" className="gap-2">
+              <Plus className="w-4 h-4" />
               Manual Entry
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="upload" className="space-y-4">
+          <TabsContent value="upload" className="space-y-4 mt-0">
             <div className="space-y-4">
-              <div>
-                <Label htmlFor="file-upload">Upload Health Document</Label>
-                <div className="mt-2 flex items-center gap-4">
-                  <Input
+              <div className="space-y-2">
+                <Label htmlFor="file-upload" className="text-sm font-medium">Upload Health Document</Label>
+                <div className="mt-2 flex items-center gap-3">
+                  <input
                     id="file-upload"
                     type="file"
                     accept=".json,.pdf,.doc,.docx,.jpg,.jpeg,.png,.heic"
-                    onChange={handleFileUpload}
+                    onChange={handleFileSelect}
                     ref={fileInputRef}
-                    className="flex-1"
+                    className="hidden"
                   />
+                  <div className="flex-1 px-3 py-2 border rounded-md bg-gray-50 text-sm text-gray-500">
+                    {selectedFileName || 'No file chosen'}
+                  </div>
                   <Button
+                    type="button"
                     variant="outline"
                     onClick={() => fileInputRef.current?.click()}
+                    className="cursor-pointer"
                   >
                     <FileJson className="w-4 h-4 mr-2" />
                     Browse
                   </Button>
                 </div>
-                <p className="mt-2 text-sm text-gray-500">
+                <p className="text-xs text-gray-500">
                   Upload FHIR JSON files, PDFs, documents (DOC/DOCX), or images (JPG/PNG/HEIC)
                 </p>
               </div>
+
+              {selectedFileName && (
+                <Button 
+                  onClick={handleFileUpload} 
+                  className="w-full"
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Confirm Upload
+                </Button>
+              )}
             </div>
           </TabsContent>
 
-          <TabsContent value="manual" className="space-y-4">
+          <TabsContent value="manual" className="space-y-4 mt-0">
             <div className="space-y-4">
-              <div>
-                <Label htmlFor="category">Record Type</Label>
+              <div className="space-y-2">
+                <Label htmlFor="category" className="text-sm font-medium">Record Type</Label>
                 <Select value={category} onValueChange={(value) => setCategory(value as any)}>
                   <SelectTrigger>
                     <SelectValue />
@@ -373,8 +403,10 @@ export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
                 </Select>
               </div>
 
-              <div>
-                <Label htmlFor="name">Name / Title *</Label>
+              <div className="space-y-2">
+                <Label htmlFor="name" className="text-sm font-medium">
+                  Name / Title <span className="text-red-600">*</span>
+                </Label>
                 <Input
                   id="name"
                   value={manualData.name}
@@ -383,8 +415,8 @@ export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
                 />
               </div>
 
-              <div>
-                <Label htmlFor="description">Description / Dosage</Label>
+              <div className="space-y-2">
+                <Label htmlFor="description" className="text-sm font-medium">Description / Dosage</Label>
                 <Textarea
                   id="description"
                   value={manualData.description}
@@ -395,8 +427,8 @@ export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="date">Record Date</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="date" className="text-sm font-medium">Record Date</Label>
                   <Input
                     id="date"
                     type="date"
@@ -404,8 +436,8 @@ export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
                     onChange={(e) => setManualData({ ...manualData, date: e.target.value })}
                   />
                 </div>
-                <div>
-                  <Label htmlFor="visitDate">Visit Date (Optional)</Label>
+                <div className="space-y-2">
+                  <Label htmlFor="visitDate" className="text-sm font-medium">Visit Date (Optional)</Label>
                   <Input
                     id="visitDate"
                     type="date"
@@ -415,8 +447,8 @@ export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
                 </div>
               </div>
 
-              <div>
-                <Label htmlFor="provider">Healthcare Provider (Optional)</Label>
+              <div className="space-y-2">
+                <Label htmlFor="provider" className="text-sm font-medium">Healthcare Provider (Optional)</Label>
                 <Input
                   id="provider"
                   value={manualData.provider}
@@ -425,8 +457,8 @@ export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
                 />
               </div>
 
-              <div>
-                <Label htmlFor="additional">Additional Notes</Label>
+              <div className="space-y-2">
+                <Label htmlFor="additional" className="text-sm font-medium">Additional Notes</Label>
                 <Textarea
                   id="additional"
                   value={manualData.additionalInfo}
@@ -436,7 +468,7 @@ export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
                 />
               </div>
 
-              <Button onClick={handleManualAdd} className="w-full">
+              <Button onClick={handleManualAdd} className="w-full mt-2">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Record
               </Button>
@@ -445,8 +477,8 @@ export function UploadRecord({ onRecordAdded }: UploadRecordProps) {
         </Tabs>
 
         {uploadStatus && (
-          <Alert className={`mt-4 ${uploadStatus.type === 'error' ? 'border-red-500' : 'border-green-500'}`}>
-            <AlertDescription>
+          <Alert className={`mt-4 ${uploadStatus.type === 'error' ? 'border-red-500 bg-red-50' : 'border-green-500 bg-green-50'}`}>
+            <AlertDescription className={uploadStatus.type === 'error' ? 'text-red-800' : 'text-green-800'}>
               {uploadStatus.message}
             </AlertDescription>
           </Alert>

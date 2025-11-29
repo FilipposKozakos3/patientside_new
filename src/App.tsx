@@ -329,25 +329,25 @@ export default function App() {
               {/* Navigation Tabs - Patient Only */}
               {currentView !== 'profile' && currentView !== 'notifications' && user.role === 'patient' && (
                 <Tabs value={currentView} onValueChange={setCurrentView} className="w-full">
-                  <TabsList className="grid w-full grid-cols-5 bg-gray-200">
-                    <TabsTrigger value="dashboard" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
-                      <LayoutDashboard className="w-4 h-4 mr-2" />
+                  <TabsList className="grid w-full grid-cols-5 mb-6">
+                    <TabsTrigger value="dashboard" className="gap-2">
+                      <LayoutDashboard className="w-4 h-4" />
                       Dashboard
                     </TabsTrigger>
-                    <TabsTrigger value="records" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
-                      <FolderOpen className="w-4 h-4 mr-2" />
+                    <TabsTrigger value="records" className="gap-2">
+                      <FolderOpen className="w-4 h-4" />
                       Records
                     </TabsTrigger>
-                    <TabsTrigger value="upload" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
-                      <Upload className="w-4 h-4 mr-2" />
+                    <TabsTrigger value="upload" className="gap-2">
+                      <Upload className="w-4 h-4" />
                       Upload
                     </TabsTrigger>
-                    <TabsTrigger value="providers" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
-                      <Building2 className="w-4 h-4 mr-2" />
+                    <TabsTrigger value="providers" className="gap-2">
+                      <Building2 className="w-4 h-4" />
                       Providers
                     </TabsTrigger>
-                    <TabsTrigger value="settings" className="data-[state=active]:bg-gray-600 data-[state=active]:text-white">
-                      <Settings className="w-4 h-4 mr-2" />
+                    <TabsTrigger value="settings" className="gap-2">
+                      <Settings className="w-4 h-4" />
                       Settings
                     </TabsTrigger>
                   </TabsList>
