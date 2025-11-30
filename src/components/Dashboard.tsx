@@ -11,7 +11,7 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Alert, AlertDescription } from "./ui/alert";
 
-//import { supabase } from "../supabase/supabaseClient";
+import { supabase } from "../supabase/supabaseClient";
 
 import {
   Heart,
@@ -47,72 +47,133 @@ export function Dashboard({
   const [recentRecords, setRecentRecords] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
 
-  // TEMP: test email for parse-record – later we’ll pass the real logged-in user email
-  // const TEST_USER_EMAIL = "spark895@gatech.edu";
-
-
-//   const testParseRecord = async () => {
-//   try {
-//     const { data, error } = await supabase.functions.invoke("parse-record", {
-//       body: {
-//         bucket: "patient-docs",
-//         path: "dummy.pdf",
-//         userEmail: TEST_USER_EMAIL, 
-//       },
-//     });
-
-//     console.log("parse-record response:", { data, error });
-
-//     if (error) {
-//       alert("parse-record error: " + error.message);
-//     } else {
-//       alert("parse-record success: " + JSON.stringify(data));
-//     }
-//   } catch (err: any) {
-//     console.error("parse-record error (network):", err);
-//     alert("parse-record error: " + err.message);
-//   }
-// };
-
+  // code added below to reflect changes on Health Summary
 
   useEffect(() => {
-    loadDashboardData();
-  }, [refreshTrigger]);
-
-  const loadDashboardData = () => {
-    const allRecords = storageUtils.getAllRecords();
-    const storageStats = storageUtils.getStorageStats();
-
-    // Get recent records (last 5)
-    const sorted = [...allRecords].sort(
-      (a, b) =>
-        new Date(b.dateAdded).getTime() -
-        new Date(a.dateAdded).getTime(),
-    );
-    setRecentRecords(sorted.slice(0, 5));
-
-    // Set stats
-    setStats(storageStats);
-
-    // Mock notifications (in production these would come from a backend)
-    const mockNotifications = [
-      {
-        id: 1,
-        type: "new_record",
-        message: "New lab results uploaded",
-        date: new Date().toISOString(),
-        read: false,
-      },
-      {
-        id: 2,
-        type: "reminder",
-        message: "Upcoming appointment with Dr. Smith",
-        date: new Date(Date.now() - 86400000).toISOString(),
-        read: false,
-      },
-    ];
-    setNotifications(mockNotifications);
+  const run = async () => {
+    await loadDashboardData();
   };
+  run();
+}, [refreshTrigger]);
+
+const loadDashboardData = async () => {
+  // 1) Local storage (for recent activity + storage bar)
+  const allRecords = storageUtils.getAllRecords();
+  const storageStats = storageUtils.getStorageStats();
+
+  const sorted = [...allRecords].sort(
+    (a, b) =>
+      new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
+  );
+  setRecentRecords(sorted.slice(0, 5));
+
+  // 2) Default to local stats
+  let medCount = storageStats.byCategory.medication || 0;
+  let allergyCount = storageStats.byCategory.allergy || 0;
+  let labCount = storageStats.byCategory.observation || 0;
+
+  // 3) Try to override with Supabase counts for this user
+  try {
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+
+    if (!userError && userData?.user?.email) {
+      const email = userData.user.email;
+
+      const { count: medsDbCount } = await supabase
+        .from("medications")
+        .select("id", { count: "exact", head: true })
+        .eq("email", email);
+
+      const { count: allergiesDbCount } = await supabase
+        .from("allergies")
+        .select("id", { count: "exact", head: true })
+        .eq("email", email);
+
+      const { count: labsDbCount } = await supabase
+        .from("lab_results")
+        .select("id", { count: "exact", head: true })
+        .eq("email", email);
+
+      if (typeof medsDbCount === "number") medCount = medsDbCount;
+      if (typeof allergiesDbCount === "number") allergyCount = allergiesDbCount;
+      if (typeof labsDbCount === "number") labCount = labsDbCount;
+    }
+  } catch (e) {
+    console.error("Error loading DB stats:", e);
+    // fall back to local stats if DB fails
+  }
+
+  // 4) Store combined stats (local + DB overrides for categories)
+  setStats({
+    ...storageStats,
+    byCategory: {
+      ...storageStats.byCategory,
+      medication: medCount,
+      allergy: allergyCount,
+      observation: labCount,
+    },
+  });
+
+  // 5) (Optional) keep your mock notifications as before
+  const mockNotifications = [
+    {
+      id: 1,
+      type: "new_record",
+      message: "New lab results uploaded",
+      date: new Date().toISOString(),
+      read: false,
+    },
+    {
+      id: 2,
+      type: "reminder",
+      message: "Upcoming appointment with Dr. Smith",
+      date: new Date(Date.now() - 86400000).toISOString(),
+      read: false,
+    },
+  ];
+  setNotifications(mockNotifications);
+};
+
+  // WORKED - Uses only localStorage stats
+
+  // useEffect(() => {
+  //   loadDashboardData();
+  // }, [refreshTrigger]);
+
+  // const loadDashboardData = () => {
+  //   const allRecords = storageUtils.getAllRecords();
+  //   const storageStats = storageUtils.getStorageStats();
+
+  //   // Get recent records (last 5)
+  //   const sorted = [...allRecords].sort(
+  //     (a, b) =>
+  //       new Date(b.dateAdded).getTime() -
+  //       new Date(a.dateAdded).getTime(),
+  //   );
+  //   setRecentRecords(sorted.slice(0, 5));
+
+  //   // Set stats
+  //   setStats(storageStats);
+
+  //   // Mock notifications (in production these would come from a backend)
+  //   const mockNotifications = [
+  //     {
+  //       id: 1,
+  //       type: "new_record",
+  //       message: "New lab results uploaded",
+  //       date: new Date().toISOString(),
+  //       read: false,
+  //     },
+  //     {
+  //       id: 2,
+  //       type: "reminder",
+  //       message: "Upcoming appointment with Dr. Smith",
+  //       date: new Date(Date.now() - 86400000).toISOString(),
+  //       read: false,
+  //     },
+  //   ];
+  //   setNotifications(mockNotifications);
+  // };
 
   const getCategoryIcon = (category: string) => {
     switch (category) {

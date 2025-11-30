@@ -8,6 +8,8 @@ import { Download, QrCode, FileJson, Smartphone, Copy, Check } from 'lucide-reac
 import { Alert, AlertDescription } from './ui/alert';
 import QRCodeStyling from 'qr-code-styling';
 
+
+
 interface ExportOptionsProps {
   record: StoredHealthRecord | null;
   isOpen: boolean;
