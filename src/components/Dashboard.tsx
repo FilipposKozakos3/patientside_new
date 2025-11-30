@@ -10,6 +10,9 @@ import {
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Alert, AlertDescription } from "./ui/alert";
+
+//import { supabase } from "../supabase/supabaseClient";
+
 import {
   Heart,
   Pill,
@@ -43,6 +46,34 @@ export function Dashboard({
   const [stats, setStats] = useState<any>(null);
   const [recentRecords, setRecentRecords] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
+
+  // TEMP: test email for parse-record – later we’ll pass the real logged-in user email
+  // const TEST_USER_EMAIL = "spark895@gatech.edu";
+
+
+//   const testParseRecord = async () => {
+//   try {
+//     const { data, error } = await supabase.functions.invoke("parse-record", {
+//       body: {
+//         bucket: "patient-docs",
+//         path: "dummy.pdf",
+//         userEmail: TEST_USER_EMAIL, 
+//       },
+//     });
+
+//     console.log("parse-record response:", { data, error });
+
+//     if (error) {
+//       alert("parse-record error: " + error.message);
+//     } else {
+//       alert("parse-record success: " + JSON.stringify(data));
+//     }
+//   } catch (err: any) {
+//     console.error("parse-record error (network):", err);
+//     alert("parse-record error: " + err.message);
+//   }
+// };
+
 
   useEffect(() => {
     loadDashboardData();
@@ -146,6 +177,21 @@ export function Dashboard({
           Here&apos;s a quick snapshot of your recent health records and summary.
         </p>
       </div>
+
+      
+      {/* TEMP DEBUG BUTTON – remove after testing */}
+      {/*
+      <div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={testParseRecord}
+        >
+          Test parse-record function
+        </Button>
+      </div>
+      */}
+
 
       {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

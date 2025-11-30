@@ -226,8 +226,17 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
                     {c.attachment.title && (
                       <p className="text-sm">Title: {c.attachment.title}</p>
                     )}
+
+
                     {c.attachment.data && (
-                      <p className="text-sm mt-2">{atob(c.attachment.data)}</p>
+                      <a
+                        className="text-sm mt-2 text-blue-600 underline"
+                        href={`data:${c.attachment.contentType};base64,${c.attachment.data}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Open document
+                      </a>
                     )}
                   </div>
                 ))}
