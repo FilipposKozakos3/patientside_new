@@ -11,10 +11,38 @@ interface RecordViewerProps {
   onClose: () => void;
 }
 
+// helper function for opening pdf in a new tab
+function base64ToBlobUrl(base64: string, contentType: string) {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: contentType || "application/pdf" });
+  return URL.createObjectURL(blob);
+}
+
+
 export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
   if (!record) return null;
 
   const resource = record.resource;
+
+  // added for preview of the document
+
+  const isDocument = resource.resourceType === "DocumentReference";
+  const firstAttachment = isDocument
+  ? (resource as any).content?.[0]?.attachment
+  : null;
+
+  const inlinePdfUrl =
+  firstAttachment?.data && firstAttachment?.contentType?.includes("pdf")
+    ? base64ToBlobUrl(firstAttachment.data, firstAttachment.contentType)
+    : null;
+
+  
+    // end of the section
 
   const renderResourceDetails = () => {
     switch (resource.resourceType) {
@@ -228,18 +256,29 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
                     )}
 
 
-                    {c.attachment.data && (
+                    {inlinePdfUrl && (
                       <a
                         className="text-sm mt-2 text-blue-600 underline"
-                        href={`data:${c.attachment.contentType};base64,${c.attachment.data}`}
+                        href={inlinePdfUrl}
                         target="_blank"
-                        rel="noopener noreferrer"
+                        rel="noopener"
                       >
-                        Open document
+                        Open document in new tab
                       </a>
                     )}
+
                   </div>
                 ))}
+              </div>
+            )}
+
+            {inlinePdfUrl && (
+              <div className="mt-4 h-96 border rounded overflow-hidden">
+                <iframe
+                  src={inlinePdfUrl}
+                  className="w-full h-full"
+                  title="PDF preview"
+                />
               </div>
             )}
           </div>
