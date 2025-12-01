@@ -56,6 +56,10 @@ import {
   DialogTitle,
 } from './ui/dialog';
 
+// IMPORTANT: this must match the bucket ID in Supabase Storage
+const STORAGE_BUCKET = 'health-records';
+
+
 interface ProviderPortalProps {
   providerName: string;
   providerEmail: string;
@@ -68,6 +72,7 @@ interface ConnectedPatient {
   id: string; // The ID of the patient (from the profiles table)
   name: string;
   patientId: string; // This is a placeholder for a public ID if one existed, but we'll use the profile ID for now
+  email: string;              //  add this
   status: 'Active' | 'Inactive'; // Mock status, will need DB column later for real status
   lastSeen: string;
   shared: 'Connected' | 'Request Sent' | 'Request Needed'; // Indicates the status of the connection
@@ -220,13 +225,23 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
     setLoading(true);
     
     // Query the patient_provider table where provider_id matches the current user
+    // const { data, error } = await supabase
+    //   .from('patient_provider')
+    //   .select(`
+    //     access_granted_at,
+    //     patient_profile:patient_id (id, full_name)
+    //   `)
+    //   .eq('provider_id', pId);
+    
+    // added 12/01 4:16pm
     const { data, error } = await supabase
       .from('patient_provider')
       .select(`
         access_granted_at,
-        patient_profile:patient_id (id, full_name)
+        patient_profile:patient_id (id, full_name, email)
       `)
       .eq('provider_id', pId);
+
 
     setLoading(false);
 
@@ -249,6 +264,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
                     id: profile.id as string,
                     name: profile.full_name as string,
                     patientId: profile.id as string, // Use profile ID as the identifier
+                    email: profile.email as string,   // 🔹 map email
                     status: 'Active' as const, // Defaulting to 'Active' for now
                     lastSeen: new Date(item.access_granted_at).toLocaleDateString(), // Using access grant date as a proxy
                     shared: 'Connected' as const,
@@ -391,96 +407,251 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
     const pdfBlob = doc.output('blob');
     return URL.createObjectURL(pdfBlob);
   };
+  
+  // new code added 12/01
+  const handleUploadData = async () => {
+  if (!selectedPatient) {
+    toast.error('Please select a patient first');
+    return;
+  }
 
-  const handleUploadData = () => {
-    if (addDataMethod === 'upload') {
-      if (!uploadFile) {
-        toast.error('Please select a file to upload');
-        return;
+  const patientEmail = selectedPatient.email;
+  const patientId = selectedPatient.id;
+
+  if (!patientEmail) {
+    toast.error('Selected patient is missing an email');
+    return;
+  }
+
+  if (addDataMethod === 'upload') {
+    // --------- UPLOAD BRANCH ----------
+    if (!uploadFile) {
+      toast.error('Please select a file to upload');
+      return;
+    }
+    if (!uploadDocumentType) {
+      toast.error('Please select a record type');
+      return;
+    }
+
+    try {
+      // 1) Upload file to Supabase Storage
+      const bucket = STORAGE_BUCKET;
+      const path = `${patientId}/${Date.now()}-${uploadFile.name}`;
+
+      const { error: storageError } = await supabase.storage
+        .from(bucket)
+        .upload(path, uploadFile, {
+          contentType: uploadFile.type || 'application/octet-stream',
+          upsert: true,
+        });
+
+      if (storageError) {
+        console.error('Storage upload error:', storageError);
+
+        if (storageError.message?.includes('Bucket not found')) {
+          toast.error(
+            `Storage bucket "${bucket}" not found. Create it in Supabase Storage or update STORAGE_BUCKET.`
+          );
+        } else {
+          toast.error('Failed to upload file to storage.');
+        }
+        return; // ⬅️ don’t continue if upload fails
       }
-      if (!uploadDocumentType) {
-        toast.error('Please select a record type');
-        return;
-      }
-      
-      // Create a new document from uploaded file
-      const typeMap: Record<string, string> = {
-        'lab': 'Lab Test',
-        'imaging': 'Imaging',
-        'prescription': 'Medication',
-        'visit': 'Clinical Note',
-        'other': 'Other'
+
+      // 2) Invoke parse-record Edge Function for THIS patient
+      // const { data: parseData, error: parseError } = await supabase.functions.invoke(
+      //   'parse-record',
+      //   {
+      //     body: {
+      //       bucket,
+      //       path,
+      //       userEmail: patientEmail,   // 🔹 parse as that patient's data
+      //     },
+      //   }
+      // );
+      // 2) Invoke parse-record Edge Function for THIS patient
+
+      // added 12/01 5:11pm
+      // 2) Invoke parse-record Edge Function for THIS patient
+      const parsed = {
+        provider: providerName || 'Unknown Provider',
+        medications: [],      // or some dummy values if you want
+        allergies: [],
+        lab_results: [],
+        immunizations: [],
       };
-      
-      // Remove file extension from name and store the extension
+
+      const { data: parseData, error: parseError } = await supabase.functions.invoke(
+        'parse-record',
+        {
+          body: {
+            userEmail: patientEmail,   // ✅ required by index.ts
+            parsed,                    // ✅ required by index.ts
+            fileName: uploadFile.name, // ✅ used in health_records insert
+            filePath: path,            // ✅ `${patientId}/${Date.now()}-${uploadFile.name}`
+            // (optional) you can also still pass bucket if you want:
+            // bucket,
+          },
+        }
+      );
+
+
+
+      if (parseError) {
+        console.error('parse-record error:', parseError);
+        toast.error('File uploaded, but failed to parse health data.');
+      } else {
+        console.log('parse-record response:', parseData);
+        toast.success(`Data uploaded and parsed for ${selectedPatient.name}`);
+      }
+
+      // 3) Still keep a local PatientDocument so the provider can view/download
+      const typeMap: Record<string, string> = {
+        lab: 'Lab Test',
+        imaging: 'Imaging',
+        prescription: 'Medication',
+        visit: 'Clinical Note',
+        other: 'Other',
+      };
+
       const fileNameWithoutExtension = uploadFile.name.replace(/\.[^/.]+$/, '');
       const fileExtension = uploadFile.name.match(/\.[^/.]+$/)?.at(0) || '';
-      
+
       const newDocument: PatientDocument = {
         id: String(Date.now()),
         name: fileNameWithoutExtension,
         type: typeMap[uploadDocumentType] || 'Other',
-        date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
-        url: URL.createObjectURL(uploadFile), // Create a local URL for the uploaded file
-        fileExtension: fileExtension, // Store original file extension
-        patientId: selectedPatient?.id || '', // Associate with the selected patient
-        notes: uploadNotes || undefined // Store additional notes if provided
+        date: new Date().toLocaleDateString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+        }),
+        url: URL.createObjectURL(uploadFile),
+        fileExtension,
+        patientId,
+        notes: uploadNotes || undefined,
       };
-      
+
       setPatientDocuments(prev => [newDocument, ...prev]);
-      toast.success(`Data uploaded successfully for ${selectedPatient?.name}`);
-    } else {
-      // Manual entry validation
-      if (!manualRecordType || !manualTitle) {
-        toast.error('Please fill in required fields');
-        return;
-      }
-      
-      // Create a new document from manual entry
-      const typeMap: Record<string, string> = {
-        'lab': 'Lab Test',
-        'imaging': 'Imaging',
-        'prescription': 'Medication',
-        'visit': 'Clinical Note',
-        'immunization': 'Immunization',
-        'allergy': 'Allergy',
-        'other': 'Other'
-      };
-      
-      const recordDate = manualRecordDate 
-        ? new Date(manualRecordDate).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
-        : new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
-      
-      // Generate PDF from manual entry
-      const pdfUrl = generatePDFFromManualEntry();
-      
-      const newDocument: PatientDocument = {
-        id: String(Date.now()),
-        name: manualTitle,
-        type: typeMap[manualRecordType] || 'Other',
-        date: recordDate,
-        url: pdfUrl,
-        fileExtension: '.pdf',
-        patientId: selectedPatient?.id || '' // Associate with the selected patient
-      };
-      
-      setPatientDocuments(prev => [newDocument, ...prev]);
-      toast.success(`Manual record added successfully for ${selectedPatient?.name}`);
+    } catch (err) {
+      console.error('Error in handleUploadData (upload branch):', err);
+      toast.error('Unexpected error while uploading data.');
+      return;
     }
+  } else {
+    // 🔹 keep your existing manual entry branch here (unchanged)
+    // ...
+  }
+
+  // Reset form + close dialog (keep this part as you already have)
+  setUploadFile(null);
+  setUploadDocumentType(undefined);
+  setUploadNotes('');
+  setManualRecordType(undefined);
+  setManualTitle('');
+  setManualDescription('');
+  setManualRecordDate('');
+  setManualVisitDate('');
+  setManualProviderName('');
+  setManualNotes('');
+  setAddDataDialogOpen(false);
+};
+
+
+
+  // commented out 12/01 4:19pm
+
+  // const handleUploadData = () => {
+  //   if (addDataMethod === 'upload') {
+  //     if (!uploadFile) {
+  //       toast.error('Please select a file to upload');
+  //       return;
+  //     }
+  //     if (!uploadDocumentType) {
+  //       toast.error('Please select a record type');
+  //       return;
+  //     }
+
+      
+  //     // Create a new document from uploaded file
+  //     const typeMap: Record<string, string> = {
+  //       'lab': 'Lab Test',
+  //       'imaging': 'Imaging',
+  //       'prescription': 'Medication',
+  //       'visit': 'Clinical Note',
+  //       'other': 'Other'
+  //     };
+      
+  //     // Remove file extension from name and store the extension
+  //     const fileNameWithoutExtension = uploadFile.name.replace(/\.[^/.]+$/, '');
+  //     const fileExtension = uploadFile.name.match(/\.[^/.]+$/)?.at(0) || '';
+      
+  //     const newDocument: PatientDocument = {
+  //       id: String(Date.now()),
+  //       name: fileNameWithoutExtension,
+  //       type: typeMap[uploadDocumentType] || 'Other',
+  //       date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
+  //       url: URL.createObjectURL(uploadFile), // Create a local URL for the uploaded file
+  //       fileExtension: fileExtension, // Store original file extension
+  //       patientId: selectedPatient?.id || '', // Associate with the selected patient
+  //       notes: uploadNotes || undefined // Store additional notes if provided
+  //     };
+      
+  //     setPatientDocuments(prev => [newDocument, ...prev]);
+  //     toast.success(`Data uploaded successfully for ${selectedPatient?.name}`);
+  //   } else {
+  //     // Manual entry validation
+  //     if (!manualRecordType || !manualTitle) {
+  //       toast.error('Please fill in required fields');
+  //       return;
+  //     }
+      
+  //     // Create a new document from manual entry
+  //     const typeMap: Record<string, string> = {
+  //       'lab': 'Lab Test',
+  //       'imaging': 'Imaging',
+  //       'prescription': 'Medication',
+  //       'visit': 'Clinical Note',
+  //       'immunization': 'Immunization',
+  //       'allergy': 'Allergy',
+  //       'other': 'Other'
+  //     };
+      
+  //     const recordDate = manualRecordDate 
+  //       ? new Date(manualRecordDate).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+  //       : new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+      
+  //     // Generate PDF from manual entry
+  //     const pdfUrl = generatePDFFromManualEntry();
+      
+  //     const newDocument: PatientDocument = {
+  //       id: String(Date.now()),
+  //       name: manualTitle,
+  //       type: typeMap[manualRecordType] || 'Other',
+  //       date: recordDate,
+  //       url: pdfUrl,
+  //       fileExtension: '.pdf',
+  //       patientId: selectedPatient?.id || '' // Associate with the selected patient
+  //     };
+      
+  //     setPatientDocuments(prev => [newDocument, ...prev]);
+  //     toast.success(`Manual record added successfully for ${selectedPatient?.name}`);
+  //   }
     
-    // Reset form
-    setUploadFile(null);
-    setUploadDocumentType(undefined);
-    setUploadNotes('');
-    setManualRecordType(undefined);
-    setManualTitle('');
-    setManualDescription('');
-    setManualRecordDate('');
-    setManualVisitDate('');
-    setManualProviderName('');
-    setManualNotes('');
-    setAddDataDialogOpen(false);
-  };
+  //   // Reset form
+  //   setUploadFile(null);
+  //   setUploadDocumentType(undefined);
+  //   setUploadNotes('');
+  //   setManualRecordType(undefined);
+  //   setManualTitle('');
+  //   setManualDescription('');
+  //   setManualRecordDate('');
+  //   setManualVisitDate('');
+  //   setManualProviderName('');
+  //   setManualNotes('');
+  //   setAddDataDialogOpen(false);
+  // };
 
   const handleGrantPermission = (permissionId: string, patientName: string, file: string) => {
     setPermissions(prev => 
@@ -587,6 +758,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
         id: patientId,
         name: patientName,
         patientId: patientId,
+        email: trimmedEmail,             // 🔹 add this
         status: 'Active', 
         lastSeen: new Date().toLocaleDateString('en-US'),
         shared: 'Request Sent' as const, // Local state shows Request Sent
