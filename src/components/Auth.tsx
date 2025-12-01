@@ -1,108 +1,47 @@
-import { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import React, { useState } from 'react';
+import { supabase } from '../supabase/supabaseClient';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Alert, AlertDescription } from './ui/alert';
-import { Heart, CheckCircle } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import { Loader2, UserCircle } from 'lucide-react';
 import patientLogo from '../assets/patient_logo.png';
 
-import { supabase } from '../supabase/supabaseClient';
+// Define the expected role types for type safety
+type UserRole = 'patient' | 'provider';
 
 interface AuthProps {
-  role: string; // 👈 coming from App.tsx
-  onAuthenticated: (userData: { email: string; role: string; name: string }) => void;
+  role: UserRole; // The role passed from App.tsx (determines the flow)
+  onAuthenticated: (userData: { email: string; role: UserRole; name: string }) => void;
 }
 
-export function Auth({ role, onAuthenticated }: AuthProps) {
+export const Auth: React.FC<AuthProps> = ({ role, onAuthenticated }) => {
+  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  const isPatient = role === 'patient';
+  const roleText = isPatient ? 'Patient' : 'Provider';
 
-    if (!email || !password) {
-      setError('Please enter both email and password');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      const { data, error: loginError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (loginError) {
-        setError(loginError.message);
-        return;
-      }
-
-      const user = data.user;
-      if (!user) {
-        setError('Login failed. Please try again.');
-        return;
-      }
-
-      // Get profile name if available
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (profileError && profileError.code !== 'PGRST116') {
-        console.error(profileError);
-      }
-
-      const finalName = profile?.full_name || name || email.split('@')[0];
-
-      setName(finalName);
-      localStorage.setItem('lastEmail', email);
-
-      onAuthenticated({
-        email,
-        role,
-        name: finalName,
-      });
-    } catch (err) {
-      console.error(err);
-      setError('Unexpected error during login. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
+  // --- Sign-Up Logic (Sets the Role) ---
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!name || !email || !password) {
-      setError('Please fill in all fields');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (!email || !password || !name) {
+      setError('Please fill in all fields.');
       return;
     }
 
     try {
       setLoading(true);
 
-      const { data, error: signUpError } = await supabase.auth.signUp({
+      // 1. Create the user in Supabase auth
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
       });
@@ -112,142 +51,199 @@ export function Auth({ role, onAuthenticated }: AuthProps) {
         return;
       }
 
-      const user = data.user;
+      const user = authData.user;
       if (!user) {
         setError('Sign up failed. Please try again.');
         return;
       }
 
-      // Create / update profile row
-      const { error: profileError } = await supabase.from('profiles').upsert({
+      // 2. Insert the profile into the public.profiles table with the correct role
+      const { error: profileError } = await supabase.from('profiles').insert({
         id: user.id,
         email: user.email,
         full_name: name,
+        role: role, // 👈 USING THE ROLE PROP HERE
       });
 
       if (profileError) {
-        console.error(profileError);
+        // Log the profile error and sign out the user created in step 1 if the profile failed
+        console.error("Profile creation failed, signing out user:", profileError);
+        await supabase.auth.signOut();
+        setError('Failed to create user profile. Please try again.');
+        return;
       }
+      
+      // 3. Success
+      onAuthenticated({ email: user.email!, role, name });
 
-      localStorage.setItem('lastEmail', email);
-
-      onAuthenticated({
-        email,
-        role,
-        name,
-      });
     } catch (err) {
       console.error(err);
-      setError('Unexpected error during sign up. Please try again.');
+      setError('An unexpected error occurred during sign up.');
     } finally {
       setLoading(false);
     }
   };
 
+  // --- Log-In Logic (Verifies the Role) ---
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!email || !password) {
+      setError('Please enter your email and password.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      // 1. Attempt standard Supabase login
+      const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
+      
+      const user = authData.user;
+      if (!user) return; // Should not happen if signIn was successful
+
+      // 2. Fetch the user's profile and stored role
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('full_name, role')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError || !profileData) {
+        // If profile is missing
+        setError("User profile not found. Please contact support.");
+        await supabase.auth.signOut();
+        return;
+      }
+      
+      // 3. Verify the selected role matches the stored role
+      if (profileData.role !== role) {
+        const actualRoleText = profileData.role === 'patient' ? 'Patient' : 'Provider';
+
+        setError(
+          `Your account is registered as a ${actualRoleText}. Please log in using the ${actualRoleText} entry point.`
+        );
+        
+        // Crucial: Log them out immediately if the role doesn't match
+        await supabase.auth.signOut(); 
+        return;
+      }
+
+      // 4. Successful login and role verification
+      onAuthenticated({
+        email: user.email!,
+        role: profileData.role as UserRole,
+        name: profileData.full_name,
+      });
+
+    } catch (err) {
+      console.error(err);
+      setError('An unexpected error occurred during login.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#F3F7FF' }}>
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center pt-[24px] pr-[24px] pb-[0px] pl-[24px]">
-          <div className="flex justify-center mb-4">
-          </div>
-          <CardTitle>
-            <img 
-              src={patientLogo} 
-              alt="PatientSide Logo" 
-              className="h-13 w-14 mx-auto"
-            />
+      <Card className="w-full max-w-md shadow-lg">
+        <CardHeader>
+          <img 
+            src={patientLogo} 
+            alt="PatientSide logo" 
+            className="h-10 w-auto mb-4 mx-auto" 
+          />
+          <CardTitle className="text-2xl text-center">
+            {isLogin ? `Log In as ${roleText}` : `Sign Up as ${roleText}`}
           </CardTitle>
-          <div className="mt-2 text-s text-foreground">
-            <span className="font-semibold capitalize">{role}</span>
-            {' '} Login
-          </div>
+          <CardDescription className="text-center">
+            {isLogin 
+              ? `Access your ${roleText} portal.` 
+              : `Create your secure ${roleText} account.`
+            }
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="login">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="signup">Sign Up</TabsTrigger>
-            </TabsList>
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <UserCircle className="h-4 w-4" />
+              <AlertTitle>Authentication Error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-            <TabsContent value="login">
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <Label htmlFor="login-email">Email</Label>
-                  <Input
-                    id="login-email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="login-password">Password</Label>
-                  <Input
-                    id="login-password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </div>
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? 'Logging in…' : 'Login'}
-                </Button>
-              </form>
-            </TabsContent>
+          <form onSubmit={isLogin ? handleLogin : handleSignup} className="space-y-4">
+            {!isLogin && (
+              <div className="space-y-2">
+                <Label htmlFor="name">Full Name</Label>
+                <Input 
+                  id="name" 
+                  type="text" 
+                  value={name} 
+                  onChange={(e) => setName(e.target.value)} 
+                  required={!isLogin}
+                />
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input 
+                id="email" 
+                type="email" 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)} 
+                required 
+              />
+            </div>
 
-            <TabsContent value="signup">
-              <form onSubmit={handleSignup} className="space-y-4">
-                <div>
-                  <Label htmlFor="signup-name">Full Name</Label>
-                  <Input
-                    id="signup-name"
-                    type="text"
-                    placeholder="John Doe"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="signup-email">Email</Label>
-                  <Input
-                    id="signup-email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="signup-password">Password</Label>
-                  <Input
-                    id="signup-password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </div>
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? 'Creating account…' : 'Sign Up'}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input 
+                id="password" 
+                type="password" 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+                required 
+              />
+            </div>
+
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? (
+                <span className="flex items-center">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing...
+                </span>
+              ) : (
+                isLogin ? 'Log In' : 'Sign Up'
+              )}
+            </Button>
+          </form>
+
+          <div className="mt-4 text-center text-sm">
+            {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
+            <Button 
+              variant="link" 
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError(''); // Clear error on switch
+              }}
+              className="p-0 h-auto"
+            >
+              {isLogin ? 'Sign Up' : 'Log In'}
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
   );
-}
+};
