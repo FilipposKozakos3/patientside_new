@@ -116,7 +116,8 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
   const [selectedNotification, setSelectedNotification] = useState<Alert | null>(null);
   const [selectedPatient, setSelectedPatient] = useState<ConnectedPatient | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [requestPatientName, setRequestPatientName] = useState('');
+  // 🔑 MODIFIED: Change state to track patient email for request
+  const [requestPatientEmail, setRequestPatientEmail] = useState('');
   const [uploadDocumentType, setUploadDocumentType] = useState<string | undefined>(undefined);
   const [uploadNotes, setUploadNotes] = useState('');
   
@@ -511,45 +512,99 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
     }
   };
 
-  const handleSubmitRequest = () => {
-    const trimmedName = requestPatientName.trim();
-    
-    if (!trimmedName) {
-      toast.error('Please enter a patient name');
+  // 🔑 UPDATED: Implement real database request using patient email
+  const handleSubmitRequest = async () => {
+    if (!providerId) {
+      toast.error('Provider user session not found. Please log in again.');
       return;
     }
 
-    // Check if patient already exists in the local state (even if disconnected)
-    const existingPatient = patients.find(
-      (patient) => patient.name.toLowerCase() === trimmedName.toLowerCase()
-    );
+    const trimmedEmail = requestPatientEmail.trim();
+    
+    if (!trimmedEmail || !trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
+      toast.error('Please enter a valid patient email address');
+      return;
+    }
+    
+    // 1. Find the Patient ID and Name using the email
+    const { data: patientProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, full_name') // Fetch ID and name
+        .eq('email', trimmedEmail)
+        .single();
 
-    if (existingPatient) {
-      // Update existing patient to 'Request Sent'
-      setPatients(prev =>
-        prev.map(patient =>
-          patient.id === existingPatient.id
-            ? { ...patient, shared: 'Request Sent' as const }
-            : patient
-        )
-      );
-    } else {
-      // Create new patient entry with status 'Request Sent'
-      const newPatient: ConnectedPatient = {
-        id: String(Date.now()), // Mock ID
-        name: trimmedName,
-        patientId: 'xxx-xxx', // Placeholder patient ID
-        status: 'Active',
-        lastSeen: new Date().toLocaleDateString('en-US'),
-        shared: 'Request Sent' as const,
-        access_granted_at: new Date().toISOString()
-      };
-      setPatients(prev => [...prev, newPatient]);
+    if (profileError || !patientProfile) {
+        toast.error(`Could not find a registered patient with the email: ${trimmedEmail}.`);
+        console.error('Error fetching patient profile:', profileError);
+        setRequestPatientEmail('');
+        return;
     }
 
-    setRequestPatientName('');
+    const patientId = patientProfile.id;
+    const patientName = patientProfile.full_name || trimmedEmail;
+
+    // 2. Check if the connection already exists
+    const { data: existingConnection, error: connectionError } = await supabase
+        .from('patient_provider')
+        .select('*')
+        .eq('provider_id', providerId)
+        .eq('patient_id', patientId);
+    
+    if (connectionError) {
+        toast.error('Error checking existing connections.');
+        return;
+    }
+
+    if (existingConnection && existingConnection.length > 0) {
+        toast.warning(`${patientName} is already connected or a request is pending.`);
+        setRequestPatientEmail('');
+        return;
+    }
+    
+    // 3. Insert the connection request into the patient_provider table
+    // The insert will log the intention to connect. The patient will likely need to approve 
+    // this on their end for the connection to be fully 'Granted'.
+    const { error: insertError } = await supabase
+        .from('patient_provider')
+        .insert([
+            {
+                provider_id: providerId,
+                patient_id: patientId,
+                // Using current date as a placeholder for the request initiation timestamp
+                access_granted_at: new Date().toISOString() 
+            },
+        ]);
+
+    if (insertError) {
+        toast.error(`Failed to submit access request: ${insertError.message}`);
+        console.error('Error inserting connection request:', insertError);
+        setRequestPatientEmail('');
+        return;
+    }
+
+    // 4. Update local state to reflect the new 'Request Sent' patient
+    const newPatient: ConnectedPatient = {
+        id: patientId,
+        name: patientName,
+        patientId: patientId,
+        status: 'Active', 
+        lastSeen: new Date().toLocaleDateString('en-US'),
+        shared: 'Request Sent' as const, // Local state shows Request Sent
+        access_granted_at: new Date().toISOString()
+    };
+    
+    setPatients(prev => {
+        // If they were already in the list (e.g., if they were inactive/disconnected) update them. Otherwise, add.
+        const existing = prev.find(p => p.id === patientId);
+        if (existing) {
+            return prev.map(p => p.id === patientId ? newPatient : p);
+        }
+        return [...prev, newPatient];
+    });
+
+    setRequestPatientEmail('');
     setSelectedFile(null);
-    toast.success('Access request submitted successfully');
+    toast.success(`Access request submitted for ${patientName} (${trimmedEmail}). Patient must approve.`);
   };
 
   const handleNotificationClick = (alert: Alert) => {
@@ -1030,72 +1085,37 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
               <CardHeader>
                 <CardTitle>Request Patient Access</CardTitle>
                 <CardDescription>
-                  Request access to a patient's health records
+                  Enter the patient's email to request access to their health records.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Manual Entry Form */}
                 <div className="space-y-4">
-                    <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="requestPatientName">Patient Name <span className="text-red-600" style={{ color: '#dc2626' }}>*</span></Label>
-                  <Input
-                          id="requestPatientName"
-                          placeholder="Enter patient name"
-                          value={requestPatientName}
-                          onChange={(e) => setRequestPatientName(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="patientId">Patient ID</Label>
-                        <Input
-                          id="patientId"
-                          placeholder="Enter patient ID"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="dob">Date of Birth</Label>
-                        <Input
-                          id="dob"
-                          type="date"
-                          placeholder="MM/DD/YYYY"
-                        />
-                      </div>
-                      {/*
-                      <div className="space-y-2">
-                        <Label htmlFor="recordType">Record Type</Label>
-                        <Select>
-                          <SelectTrigger id="recordType">
-                            <SelectValue placeholder="Select record type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All Records</SelectItem>
-                            <SelectItem value="lab">Lab Results</SelectItem>
-                            <SelectItem value="imaging">Imaging</SelectItem>
-                            <SelectItem value="prescription">Prescriptions</SelectItem>
-                            <SelectItem value="visit">Visit Notes</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      */}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="reason">Reason for Access</Label>
-                      <Textarea
-                        id="reason"
-                        placeholder="Provide a reason for requesting access to this patient's records"
-                        rows={4}
-                      />
-                    </div>
-
-                    <Button className="w-full" onClick={handleSubmitRequest}>
-                      Submit Request
-                    </Button>
+                  <div className="space-y-2">
+                    {/* 🔑 MODIFIED: Use requestPatientEmail state */}
+                    <Label htmlFor="requestPatientEmail">Patient Email <span className="text-red-600" style={{ color: '#dc2626' }}>*</span></Label>
+                    <Input
+                      id="requestPatientEmail"
+                      type="email"
+                      placeholder="patient@example.com"
+                      value={requestPatientEmail}
+                      onChange={(e) => setRequestPatientEmail(e.target.value)}
+                    />
                   </div>
+                  
+                  {/* 🔑 REMOVED: Irrelevant mock fields from the previous complex form */}
+                  <div className="space-y-2">
+                    <Label htmlFor="reason">Reason for Access</Label>
+                    <Textarea
+                      id="reason"
+                      placeholder="Provide a reason for requesting access to this patient's records"
+                      rows={4}
+                    />
+                  </div>
+
+                  <Button className="w-full" onClick={handleSubmitRequest}>
+                    Submit Access Request
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -1448,4 +1468,4 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
     </Dialog>
     </React.Fragment> // 🔑 Structural Fix: Closes the React.Fragment
   );
-} // 🔑 Syntax Fix: Only one closing brace, which is correct
+}
