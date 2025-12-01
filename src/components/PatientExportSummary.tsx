@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { storageUtils } from '../utils/storage';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
@@ -9,18 +9,14 @@ import { toast } from 'sonner@2.0.3';
 import { supabase } from '../supabase/supabaseClient';
 import { 
   Download, 
-  QrCode, 
   FileText, 
   CheckCircle, 
   Share2,
   Pill,
   AlertCircle,
   Activity,
-  Syringe,
-  Copy,
-  Check
+  Syringe
 } from 'lucide-react';
-import QRCodeStyling from 'qr-code-styling';
 import { Separator } from './ui/separator';
 import jsPDF from 'jspdf';
 
@@ -31,22 +27,12 @@ interface PatientExportSummaryProps {
 
 export function PatientExportSummary({ isOpen, onClose }: PatientExportSummaryProps) {
   const [summary, setSummary] = useState<any>(null);
-  const [qrGenerated, setQrGenerated] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const qrRef = useRef<HTMLDivElement>(null);
-  const qrCodeRef = useRef<QRCodeStyling | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       generateSummary();
     }
   }, [isOpen]);
-
-  useEffect(() => {
-    if (summary && qrRef.current && !qrCodeRef.current) {
-      generateQRCode();
-    }
-  }, [summary]);
 
     // added for generating Health Summary
 
@@ -508,61 +494,6 @@ const generateSummary = async () => {
   //   });
   // };
 
-  const generateQRCode = () => {
-    if (!summary || !qrRef.current) return;
-
-    const data = JSON.stringify(summary.bundle);
-
-    // Clear previous QR code
-    if (qrRef.current) {
-      qrRef.current.innerHTML = '';
-    }
-
-    const qrCode = new QRCodeStyling({
-      width: 320,
-      height: 320,
-      data: data,
-      margin: 10,
-      qrOptions: {
-        typeNumber: 0,
-        mode: 'Byte',
-        errorCorrectionLevel: 'M'
-      },
-      imageOptions: {
-        hideBackgroundDots: true,
-        imageSize: 0.4,
-        margin: 0
-      },
-      dotsOptions: {
-        type: 'rounded',
-        color: '#2563eb'
-      },
-      backgroundOptions: {
-        color: '#ffffff'
-      },
-      cornersSquareOptions: {
-        type: 'extra-rounded',
-        color: '#1e40af'
-      },
-      cornersDotOptions: {
-        type: 'dot',
-        color: '#1e40af'
-      }
-    });
-
-    qrCodeRef.current = qrCode;
-    qrCode.append(qrRef.current);
-    setQrGenerated(true);
-  };
-
-  const downloadQRCode = () => {
-    if (qrCodeRef.current) {
-      qrCodeRef.current.download({
-        name: `patient-health-summary-${new Date().toISOString().split('T')[0]}`,
-        extension: 'png'
-      });
-    }
-  };
 
   // below added for better document formatting
   const downloadPDF = () => {
@@ -612,6 +543,7 @@ const generateSummary = async () => {
     yPosition += 12;
 
     // FHIR Bundle details
+    /*
     doc.setFontSize(14);
     doc.text("FHIR Bundle Information", margin, yPosition);
     yPosition += 8;
@@ -627,6 +559,7 @@ const generateSummary = async () => {
     yPosition += 6;
     doc.text(`Profile: HL7 FHIR R4`, margin + 5, yPosition);
     yPosition += 12;
+    */
 
     // ============= DETAILED SECTIONS =============
 
@@ -776,6 +709,7 @@ const generateSummary = async () => {
       doc.setFontSize(11);
     }
 
+    /*
     // ============= Instructions (existing section) =============
     ensurePageSpace(20);
     doc.setFontSize(12);
@@ -786,7 +720,7 @@ const generateSummary = async () => {
     const instructions = [
       "This summary contains your complete health information in FHIR R4 format.",
       "Share this document only with authorized healthcare providers.",
-      "For machine-readable format, use the QR code or JSON export option.",
+      "For machine-readable format, use the JSON export option.",
       "Keep this document secure and update it regularly with new health information.",
     ];
 
@@ -801,6 +735,7 @@ const generateSummary = async () => {
         yPosition += 6;
       });
     });
+    */
 
     // Footer
     const pageCount = doc.getNumberOfPages();
@@ -926,20 +861,6 @@ const generateSummary = async () => {
   //   }
   // };
 
-  const copyToClipboard = async () => {
-    if (!summary) return;
-
-    try {
-      const data = JSON.stringify(summary.bundle, null, 2);
-      await navigator.clipboard.writeText(data);
-      setCopied(true);
-      toast.success('Copied to clipboard');
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error('Error copying to clipboard:', error);
-      toast.error('Failed to copy to clipboard');
-    }
-  };
 
   if (!summary) return null;
 
@@ -965,32 +886,32 @@ const generateSummary = async () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="flex items-center gap-2 p-3 bg-white rounded-lg">
+                <div className="flex flex-col items-center justify-center gap-2 p-3 bg-white rounded-lg text-center">
                   <Pill className="w-5 h-5 text-green-600" />
-                  <div>
-                    <div className="text-xs text-gray-500">Medications</div>
-                    <div>{summary.counts.medications}</div>
+                  <div className="w-full flex flex-col items-center">
+                    <div className="text-xs text-gray-500 text-center break-words w-full">Medications</div>
+                    <div className="text-center font-semibold">{summary.counts.medications}</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 p-3 bg-white rounded-lg">
+                <div className="flex flex-col items-center justify-center gap-2 p-3 bg-white rounded-lg text-center">
                   <AlertCircle className="w-5 h-5 text-red-600" />
-                  <div>
-                    <div className="text-xs text-gray-500">Allergies</div>
-                    <div>{summary.counts.allergies}</div>
+                  <div className="w-full flex flex-col items-center">
+                    <div className="text-xs text-gray-500 text-center break-words w-full">Allergies</div>
+                    <div className="text-center font-semibold">{summary.counts.allergies}</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 p-3 bg-white rounded-lg">
+                <div className="flex flex-col items-center justify-center gap-2 p-3 bg-white rounded-lg text-center">
                   <Activity className="w-5 h-5 text-orange-600" />
-                  <div>
-                    <div className="text-xs text-gray-500">Lab Results</div>
-                    <div>{summary.counts.observations}</div>
+                  <div className="w-full flex flex-col items-center">
+                    <div className="text-xs text-gray-500 text-center break-words w-full">Lab Results</div>
+                    <div className="text-center font-semibold">{summary.counts.observations}</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 p-3 bg-white rounded-lg">
-                  <Syringe className="w-5 h-5 text-purple-600" />
-                  <div>
-                    <div className="text-xs text-gray-500">Immunizations</div>
-                    <div>{summary.counts.immunizations}</div>
+                <div className="flex flex-col items-center justify-center gap-2 p-3 bg-white rounded-lg">
+                  <Syringe className="w-5 h-5 text-purple-600 flex-shrink-0" />
+                  <div className="w-full flex flex-col items-center justify-center min-w-0">
+                    <div className="text-xs text-gray-500 ">Immunizations</div>
+                    <div className="text-center font-semibold">{summary.counts.immunizations}</div>
                   </div>
                 </div>
               </div>
@@ -1003,92 +924,24 @@ const generateSummary = async () => {
             </CardContent>
           </Card>
 
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* QR Code Section */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <QrCode className="w-5 h-5" />
-                  QR Code
-                </CardTitle>
-                <CardDescription>
-                  Scan at any FHIR-compatible clinic
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col items-center space-y-4">
-                <div 
-                  ref={qrRef} 
-                  className="border-2 border-gray-200 rounded-lg p-4 bg-white shadow-sm"
-                />
-                {qrGenerated && (
-                  <Button onClick={downloadQRCode} variant="outline" className="w-full">
-                    <Download className="w-4 h-4 mr-2" />
-                    Download QR Code
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Export Options */}
-            <Card>
+          {/* Export Options */}
+          <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <FileText className="w-5 h-5" />
-                  Export Options
+                  Export Health Summary
                 </CardTitle>
                 <CardDescription>
-                  Download or copy for sharing
+                  Download for sharing
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Button onClick={downloadPDF} className="w-full" size="lg">
                   <Download className="w-4 h-4 mr-2" />
-                  Download Summary (PDF)
+                  Download PDF
                 </Button>
-                
-                <Button onClick={copyToClipboard} variant="outline" className="w-full">
-                  {copied ? (
-                    <>
-                      <Check className="w-4 h-4 mr-2" />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4 mr-2" />
-                      Copy FHIR JSON
-                    </>
-                  )}
-                </Button>
-
-                <Separator className="my-4" />
-
-                <div className="space-y-2 text-sm text-gray-600">
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
-                    <span>FHIR R4 compliant bundle</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
-                    <span>Works with any FHIR system</span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-600 mt-0.5" />
-                    <span>Includes all critical records</span>
-                  </div>
-                </div>
               </CardContent>
             </Card>
-          </div>
-
-          {/* Usage Instructions */}
-          <Alert className="border-green-200 bg-green-50">
-            <CheckCircle className="w-4 h-4" />
-            <AlertDescription>
-              <strong>How to Use:</strong> Show the QR code at any clinic with FHIR support, or download 
-              the JSON file to a USB drive. Healthcare providers can scan or import this to instantly 
-              access your medications, allergies, lab results, and immunization history.
-            </AlertDescription>
-          </Alert>
 
           <Alert>
             <AlertDescription>
@@ -1097,18 +950,6 @@ const generateSummary = async () => {
             </AlertDescription>
           </Alert>
 
-          {/* Standards Badge */}
-          <div className="flex items-center justify-center gap-2 py-4">
-            <Badge variant="outline" className="text-xs">
-              HL7 FHIR R4
-            </Badge>
-            <Badge variant="outline" className="text-xs">
-              Standards-Based
-            </Badge>
-            <Badge variant="outline" className="text-xs">
-              Interoperable
-            </Badge>
-          </div>
         </div>
       </DialogContent>
     </Dialog>
