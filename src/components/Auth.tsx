@@ -1,22 +1,23 @@
 import React, { useState } from 'react';
-import { supabase } from '../supabase/supabaseClient';
+import { supabase } from '../supabase/supabaseClient'; // Corrected path
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
-import { Loader2, UserCircle } from 'lucide-react';
-import patientLogo from '../assets/patient_logo.png';
+import { Loader2, UserCircle, ArrowLeft } from 'lucide-react';
+import patientLogo from '../assets/patient_logo.png'; // Assuming you have this logo
 
-// Define the expected role types for type safety
-type UserRole = 'patient' | 'provider';
+// Define the expected role types with capitalized casing, matching your database ENUM
+type UserRole = 'Patient' | 'Provider';
 
 interface AuthProps {
   role: UserRole; // The role passed from App.tsx (determines the flow)
   onAuthenticated: (userData: { email: string; role: UserRole; name: string }) => void;
+  onGoBack: () => void; // New prop for back navigation
 }
 
-export const Auth: React.FC<AuthProps> = ({ role, onAuthenticated }) => {
+export const Auth: React.FC<AuthProps> = ({ role, onAuthenticated, onGoBack }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,8 +25,8 @@ export const Auth: React.FC<AuthProps> = ({ role, onAuthenticated }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const isPatient = role === 'patient';
-  const roleText = isPatient ? 'Patient' : 'Provider';
+  const isPatient = role === 'Patient';
+  const roleText = role; // Already capitalized: Patient or Provider
 
   // --- Sign-Up Logic (Sets the Role) ---
   const handleSignup = async (e: React.FormEvent) => {
@@ -59,14 +60,14 @@ export const Auth: React.FC<AuthProps> = ({ role, onAuthenticated }) => {
 
       // 2. Insert the profile into the public.profiles table with the correct role
       const { error: profileError } = await supabase.from('profiles').insert({
-        id: user.id,
+        id: user.id, // Must match the auth.user ID
         email: user.email,
         full_name: name,
-        role: role, // 👈 USING THE ROLE PROP HERE
+        role: role, // 👈 Uses the capitalized role prop
+        specialty: isPatient ? null : 'General Practice', // Example: Providers get a default specialty
       });
 
       if (profileError) {
-        // Log the profile error and sign out the user created in step 1 if the profile failed
         console.error("Profile creation failed, signing out user:", profileError);
         await supabase.auth.signOut();
         setError('Failed to create user profile. Please try again.');
@@ -109,9 +110,9 @@ export const Auth: React.FC<AuthProps> = ({ role, onAuthenticated }) => {
       }
       
       const user = authData.user;
-      if (!user) return; // Should not happen if signIn was successful
+      if (!user) return; 
 
-      // 2. Fetch the user's profile and stored role
+      // 2. Fetch the user's profile and stored role (Requires RLS SELECT Policy on profiles)
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('full_name, role')
@@ -119,21 +120,20 @@ export const Auth: React.FC<AuthProps> = ({ role, onAuthenticated }) => {
         .single();
 
       if (profileError || !profileData) {
-        // If profile is missing
         setError("User profile not found. Please contact support.");
-        await supabase.auth.signOut();
+        await supabase.auth.signOut(); 
         return;
       }
       
-      // 3. Verify the selected role matches the stored role
+      // 3. Verify the selected role (prop) matches the stored role (database)
       if (profileData.role !== role) {
-        const actualRoleText = profileData.role === 'patient' ? 'Patient' : 'Provider';
-
+        const actualRoleText = profileData.role; 
+        
+        // This is the error message that was triggering when the case didn't match.
         setError(
           `Your account is registered as a ${actualRoleText}. Please log in using the ${actualRoleText} entry point.`
         );
         
-        // Crucial: Log them out immediately if the role doesn't match
         await supabase.auth.signOut(); 
         return;
       }
@@ -155,6 +155,18 @@ export const Auth: React.FC<AuthProps> = ({ role, onAuthenticated }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#F3F7FF' }}>
+      
+      {/* --- Back Button --- */}
+      <Button
+        variant="ghost"
+        onClick={onGoBack} // Calls the function passed from App.tsx
+        className="absolute top-4 left-4 text-gray-600 hover:text-gray-900"
+      >
+        <ArrowLeft className="mr-2 h-5 w-5" />
+        Back to Role Selection
+      </Button>
+      {/* ------------------- */}
+
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
           <img 

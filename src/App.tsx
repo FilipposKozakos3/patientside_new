@@ -200,6 +200,8 @@ export default function App() {
         onAuthenticated={(userData: UserData) => {
           setUser({ ...userData, role: selectedRole });
         }}
+        // 🔑 FIX: Add the onGoBack prop to clear the role and return to selection
+        onGoBack={() => setSelectedRole(null)} 
       />
     );
   }
