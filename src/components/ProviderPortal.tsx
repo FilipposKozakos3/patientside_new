@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../supabase/supabaseClient'; // 🔑 ADDED: Supabase client import
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Button } from './ui/button';
@@ -25,7 +26,8 @@ import {
   BarChart3,
   TrendingUp,
   Users,
-  Activity
+  Activity,
+  Loader2 // 🔑 ADDED: Loader for loading state
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -61,14 +63,15 @@ interface ProviderPortalProps {
   onAlertsChange: (alerts: Alert[]) => void;
 }
 
-
+// 🔑 UPDATED: Interface to match Supabase join structure (patient_provider -> profiles)
 interface ConnectedPatient {
-  id: string;
+  id: string; // The ID of the patient (from the profiles table)
   name: string;
-  patientId: string;
-  status: 'Active' | 'Inactive';
+  patientId: string; // This is a placeholder for a public ID if one existed, but we'll use the profile ID for now
+  status: 'Active' | 'Inactive'; // Mock status, will need DB column later for real status
   lastSeen: string;
-  shared: string;
+  shared: 'Connected' | 'Request Sent' | 'Request Needed'; // Indicates the status of the connection
+  access_granted_at: string; // The date from the patient_provider table
 }
 
 interface Permission {
@@ -99,6 +102,8 @@ interface PatientDocument {
 }
 
 export function ProviderPortal({ providerName, providerEmail, onLogout, onAlertsChange }: ProviderPortalProps) {
+  const [providerId, setProviderId] = useState<string | null>(null); // 🔑 ADDED: State for the authenticated provider ID
+  const [loading, setLoading] = useState(true); // 🔑 ADDED: Loading state for initial fetch
   const [searchTerm, setSearchTerm] = useState('');
   const [permissionSearch, setPermissionSearch] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -128,6 +133,152 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
   const [manualVisitDate, setManualVisitDate] = useState('');
   const [manualProviderName, setManualProviderName] = useState('');
   const [manualNotes, setManualNotes] = useState('');
+
+  // 🔑 REPLACED MOCK DATA WITH STATE INITIALIZATION
+  const [patients, setPatients] = useState<ConnectedPatient[]>([]);
+  // Mock documents for patients - now stateful so we can add new documents
+  const [patientDocuments, setPatientDocuments] = useState<PatientDocument[]>([
+    {
+      id: '1',
+      name: 'Lab Results - CBC',
+      type: 'Lab Test',
+      date: '10/15/2024',
+      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+      patientId: '1' 
+    },
+    {
+      id: '2',
+      name: 'Prescription - Lisinopril',
+      type: 'Medication',
+      date: '10/12/2024',
+      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+      patientId: '1' 
+    },
+    {
+      id: '3',
+      name: 'Visit Notes',
+      type: 'Clinical Note',
+      date: '10/10/2024',
+      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+      patientId: '2' 
+    }
+  ]);
+
+  // Mock data for permissions (for now)
+  const [permissions, setPermissions] = useState<Permission[]>([
+    {
+      id: '1',
+      patient: 'John Doe',
+      file: 'Imaging',
+      date: '2025-10-15',
+      status: 'Granted'
+    },
+    {
+      id: '2',
+      patient: 'Liam Chen',
+      file: 'Labs',
+      date: '2025-10-21',
+      status: 'Revoked'
+    },
+    {
+      id: '3',
+      patient: 'Noah Johnson',
+      file: 'Allergies',
+      date: '2025-10-18',
+      status: 'Requested'
+    }
+  ]);
+
+  // Mock data for alerts (for now)
+  const [alerts, setAlerts] = useState<Alert[]>([
+    {
+      id: '1',
+      type: 'data',
+      title: 'New Data',
+      description: 'CBC panel shared by Ava Patel',
+      timestamp: '2h ago'
+    },
+    {
+      id: '2',
+      type: 'access',
+      title: 'Access Request',
+      description: 'Dr. Miller requested access to Liam Chen\'s records',
+      timestamp: 'X days ago'
+    },
+    {
+      id: '3',
+      type: 'permission',
+      title: 'Permission',
+      description: 'Emma Garcia revoked access to imaging folder',
+      timestamp: 'X days ago'
+    },
+  ]);
+  
+  // 🔑 NEW: Function to load connected patients from Supabase
+  const loadConnectedPatients = async (pId: string) => {
+    setLoading(true);
+    
+    // Query the patient_provider table where provider_id matches the current user
+    const { data, error } = await supabase
+      .from('patient_provider')
+      .select(`
+        access_granted_at,
+        patient_profile:patient_id (id, full_name)
+      `)
+      .eq('provider_id', pId);
+
+    setLoading(false);
+
+    if (error) {
+      console.error('Error loading connected patients:', error);
+      toast.error('Failed to load connected patients.');
+      // Fallback: Use mock data if DB fails, but typically you'd return
+      // setPatients(MOCK_PATIENTS_DATA); 
+      return;
+    }
+
+    if (data) {
+        // Map and flatten the data structure
+        const connectedPatients = data
+            .map(item => {
+                const profile = item.patient_profile;
+                if (!profile) return null; // Skip if profile data is missing
+
+                return {
+                    id: profile.id as string,
+                    name: profile.full_name as string,
+                    patientId: profile.id as string, // Use profile ID as the identifier
+                    status: 'Active' as const, // Defaulting to 'Active' for now
+                    lastSeen: new Date(item.access_granted_at).toLocaleDateString(), // Using access grant date as a proxy
+                    shared: 'Connected' as const,
+                    access_granted_at: item.access_granted_at,
+                };
+            })
+            .filter((p): p is ConnectedPatient => p !== null); 
+        
+        setPatients(connectedPatients);
+    }
+  };
+
+
+  // 🔑 NEW: Effect to authenticate and fetch data on component mount
+  useEffect(() => {
+    const fetchUser = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        const pId = user?.id;
+        
+        if (pId) {
+            setProviderId(pId);
+            loadConnectedPatients(pId);
+        } else {
+            setLoading(false);
+            toast.error('Provider user ID not found.');
+        }
+    };
+    fetchUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run only on initial mount
+
 
   // Handler functions
   const handleAddData = (patient: ConnectedPatient) => {
@@ -169,7 +320,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
       'allergy': 'Allergy',
       'other': 'Other'
     };
-    doc.text(typeMap[manualRecordType] || 'Other', 70, yPos);
+    doc.text(typeMap[manualRecordType || ''] || 'Other', 70, yPos);
     yPos += 10;
     
     // Record Date
@@ -368,13 +519,13 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
       return;
     }
 
-    // Find existing patient by name, or create new one
+    // Check if patient already exists in the local state (even if disconnected)
     const existingPatient = patients.find(
       (patient) => patient.name.toLowerCase() === trimmedName.toLowerCase()
     );
 
     if (existingPatient) {
-      // Update existing patient
+      // Update existing patient to 'Request Sent'
       setPatients(prev =>
         prev.map(patient =>
           patient.id === existingPatient.id
@@ -383,14 +534,15 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
         )
       );
     } else {
-      // Create new patient
+      // Create new patient entry with status 'Request Sent'
       const newPatient: ConnectedPatient = {
-        id: String(Date.now()),
+        id: String(Date.now()), // Mock ID
         name: trimmedName,
-        patientId: 'xxx-xxx', // Default patient ID
+        patientId: 'xxx-xxx', // Placeholder patient ID
         status: 'Active',
         lastSeen: new Date().toLocaleDateString('en-US'),
-        shared: 'Request Sent'
+        shared: 'Request Sent' as const,
+        access_granted_at: new Date().toISOString()
       };
       setPatients(prev => [...prev, newPatient]);
     }
@@ -442,124 +594,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
     }
   };
 
-  // Mock data for connected patients
-  const [patients, setPatients] = useState<ConnectedPatient[]>([
-    {
-      id: '1',
-      name: 'John Doe',
-      patientId: 'xxx-xxx',
-      status: 'Active',
-      lastSeen: '2025-10-15',
-      shared: 'Connected'
-    },
-    {
-      id: '2',
-      name: 'Liam Chen',
-      patientId: 'xxx-xxx',
-      status: 'Inactive',
-      lastSeen: '2025-10-21',
-      shared: 'Connected'
-    },
-    {
-      id: '3',
-      name: 'Noah Johnson',
-      patientId: 'xxx-xxx',
-      status: 'Active',
-      lastSeen: '2025-10-18',
-      shared: 'Request Needed'
-    },
-    {
-      id: '4',
-      name: 'Sam Smith',
-      patientId: 'xxx-xxx',
-      status: 'Active',
-      lastSeen: '2025-10-15',
-      shared: 'Request Sent'
-    }
-  ]);
-
-  // Mock documents for patients - now stateful so we can add new documents
-  // Documents are stored with patientId to associate them with specific patients
-  const [patientDocuments, setPatientDocuments] = useState<PatientDocument[]>([
-    {
-      id: '1',
-      name: 'Lab Results - CBC',
-      type: 'Lab Test',
-      date: '10/15/2024',
-      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-      patientId: '1' // John Doe
-    },
-    {
-      id: '2',
-      name: 'Prescription - Lisinopril',
-      type: 'Medication',
-      date: '10/12/2024',
-      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-      patientId: '1' // John Doe
-    },
-    {
-      id: '3',
-      name: 'Visit Notes',
-      type: 'Clinical Note',
-      date: '10/10/2024',
-      url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-      patientId: '2' // Liam Chen
-    }
-  ]);
-
-  // Mock data for permissions
-  const [permissions, setPermissions] = useState<Permission[]>([
-    {
-      id: '1',
-      patient: 'John Doe',
-      file: 'Imaging',
-      date: '2025-10-15',
-      status: 'Granted'
-    },
-    {
-      id: '2',
-      patient: 'Liam Chen',
-      file: 'Labs',
-      date: '2025-10-21',
-      status: 'Revoked'
-    },
-    {
-      id: '3',
-      patient: 'Noah Johnson',
-      file: 'Allergies',
-      date: '2025-10-18',
-      status: 'Requested'
-    }
-  ]);
-
-  // Mock data for alerts
-  const [alerts, setAlerts] = useState<Alert[]>([
-    {
-      id: '1',
-      type: 'data',
-      title: 'New Data',
-      description: 'CBC panel shared by Ava Patel',
-      timestamp: '2h ago'
-    },
-    {
-      id: '2',
-      type: 'access',
-      title: 'Access Request',
-      description: 'Dr. Miller requested access to Liam Chen\'s records',
-      timestamp: 'X days ago'
-    },
-    {
-      id: '3',
-      type: 'permission',
-      title: 'Permission',
-      description: 'Emma Garcia revoked access to imaging folder',
-      timestamp: 'X days ago'
-    },
-    
-
-  ]);
-
-    useEffect(() => {
+  useEffect(() => {
     // Push current ProviderPortal alerts up to App
     onAlertsChange(alerts);
   }, [alerts, onAlertsChange]);
@@ -590,13 +625,20 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
         return <Badge className="bg-red-100 text-red-800 border-red-200">Revoked</Badge>;
       case 'Requested':
         return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Requested</Badge>;
+      case 'Connected':
+        return <Badge className="bg-blue-100 text-blue-800 border-blue-200">Connected</Badge>;
+      case 'Request Sent':
+        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Request Sent</Badge>;
+      case 'Request Needed':
+        return <Badge className="bg-red-100 text-red-800 border-red-200">Request Needed</Badge>;
       default:
         return <Badge>{status}</Badge>;
     }
   };
 
+  // 🔑 Structural Fix: Use React.Fragment instead of shorthand fragment
   return (
-    <>
+    <React.Fragment> 
       <div className="w-full flex justify-center">
         {/* Main Content */}
         <div className="w-full max-w-6xl px-6">
@@ -649,7 +691,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
                       <p className="text-sm text-gray-600">Active Patients</p>
                       <h3 className="text-3xl mt-1">{patients.filter(p => p.status === 'Active').length}</h3>
                       <p className="text-xs text-gray-600 mt-2">
-                        {Math.round((patients.filter(p => p.status === 'Active').length / patients.length) * 100)}% of total
+                        {patients.length > 0 ? Math.round((patients.filter(p => p.status === 'Active').length / patients.length) * 100) : 0}% of total
                       </p>
                     </div>
                     <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -774,7 +816,20 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
                   </DropdownMenu>
                 </div>
 
-                {/* Table */}
+                {/* Loading State */}
+                {loading ? (
+                    <div className="flex justify-center items-center h-40">
+                        <Loader2 className="mr-2 h-6 w-6 animate-spin text-blue-500" />
+                        <p className="text-gray-500">Loading connected patients...</p>
+                    </div>
+                ) : filteredPatients.length === 0 ? (
+                    <div className="text-center p-6 border rounded-lg bg-gray-50">
+                        <p className="text-gray-500">No connected patients found or matched your filter.</p>
+                        <p className="text-sm text-gray-400 mt-1">Try requesting access on the 'Request Access' tab.</p>
+                    </div>
+                ) : (
+                
+                /* Table */
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full">
                     <thead className="bg-gray-50">
@@ -795,24 +850,20 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
                           <td className="p-3 text-sm">{getStatusBadge(patient.status)}</td>
                           <td className="p-3 text-sm text-gray-600">{patient.lastSeen}</td>
                           <td className="p-3 text-sm">
-                            {patient.shared === "Connected" ? (
-                              <span className="text-gray-900">{patient.shared}</span>
-                            ) : patient.shared === "Request Sent" ? (
-                              <span className="text-yellow-600">{patient.shared}</span>
-                            ) : (
-                              <span className="text-red-600">{patient.shared}</span>
-                            )}
+                            {getStatusBadge(patient.shared)}
                           </td>
                           <td className="p-3 text-sm">
                             <div className="flex gap-2">
-                              <Button 
-                                size="sm" 
-                                variant="outline" 
-                                className="bg-gray-100"
-                                onClick={() => handleAddData(patient)}
-                              >
-                                Add Data
-                              </Button>
+                              {patient.shared === 'Connected' && (
+                                <Button 
+                                    size="sm" 
+                                    variant="outline" 
+                                    className="bg-gray-100"
+                                    onClick={() => handleAddData(patient)}
+                                >
+                                    Add Data
+                                </Button>
+                              )}
                               <Button 
                                 size="sm" 
                                 variant="outline" 
@@ -828,6 +879,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
                     </tbody>
                   </table>
                 </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1394,6 +1446,6 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
         </div>
       </DialogContent>
     </Dialog>
-    </>
+    </React.Fragment> // 🔑 Structural Fix: Closes the React.Fragment
   );
-}
+} // 🔑 Syntax Fix: Only one closing brace, which is correct
