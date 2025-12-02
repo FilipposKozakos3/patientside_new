@@ -9,7 +9,7 @@ import { Loader2, UserCircle, ArrowLeft } from 'lucide-react';
 import patientLogo from '../assets/patient_logo.png'; // Assuming you have this logo
 
 // Define the expected role types with capitalized casing, matching your database ENUM
-type UserRole = 'Patient' | 'Provider';
+type UserRole = 'patient' | 'provider';
 
 interface AuthProps {
   role: UserRole; // The role passed from App.tsx (determines the flow)
@@ -25,63 +25,69 @@ export const Auth: React.FC<AuthProps> = ({ role, onAuthenticated, onGoBack }) =
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const isPatient = role === 'Patient';
-  const roleText = role; // Already capitalized: Patient or Provider
+  const isPatient = role === 'patient';
+  const roleText = role;
 
   // --- Sign-Up Logic (Sets the Role) ---
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
     setError('');
 
-    if (!email || !password || !name) {
-      setError('Please fill in all fields.');
-      return;
-    }
-
     try {
-      setLoading(true);
+        // 1. Authenticate the user
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+            email,
+            password,
+            // Include user_metadata if needed, e.g., { data: { full_name: name } }
+        });
 
-      // 1. Create the user in Supabase auth
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+        if (authError) {
+            setError(authError.message);
+            setLoading(false);
+            return;
+        }
 
-      if (signUpError) {
-        setError(signUpError.message);
-        return;
-      }
+        // --- NEW CRITICAL CHECK ---
+        // Get the user ID from the response data, which is most reliable.
+        const user = authData.user;
+        
+        if (!user) {
+            // This happens when email confirmation is enabled. User created but no active session.
+            setError("Sign up successful! Please check your email to confirm your account and log in.");
+            setLoading(false);
+            return;
+        }
 
-      const user = authData.user;
-      if (!user) {
-        setError('Sign up failed. Please try again.');
-        return;
-      }
+        const userId = user.id;
+        const userEmail = user.email;
 
-      // 2. Insert the profile into the public.profiles table with the correct role
-      const { error: profileError } = await supabase.from('profiles').insert({
-        id: user.id, // Must match the auth.user ID
-        email: user.email,
-        full_name: name,
-        role: role, // 👈 Uses the capitalized role prop
-        specialty: isPatient ? null : 'General Practice', // Example: Providers get a default specialty
-      });
+        // 2. Insert profile data using the new user's ID
+        const { error: profileError } = await supabase
+            .from('profiles')
+            .insert([
+                {
+                    id: userId, // Must be correct
+                    full_name: name,
+                    email: userEmail,
+                    role: role, // 'patient' or 'provider'
+                },
+            ]);
 
-      if (profileError) {
-        console.error("Profile creation failed, signing out user:", profileError);
-        await supabase.auth.signOut();
-        setError('Failed to create user profile. Please try again.');
-        return;
-      }
-      
-      // 3. Success
-      onAuthenticated({ email: user.email!, role, name });
+        if (profileError) {
+            console.error("Profile creation failed, signing out user:", profileError);
+            // This is still the RLS error. Sign out the half-registered user.
+            await supabase.auth.signOut();
+            setError("Sign up failed (Profile Error). Please try again later.");
+        } else {
+            // Success
+            onAuthenticated({ email: userEmail!, role: role, name: name });
+        }
 
     } catch (err) {
-      console.error(err);
-      setError('An unexpected error occurred during sign up.');
+        setError("An unexpected error occurred.");
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
   };
 
