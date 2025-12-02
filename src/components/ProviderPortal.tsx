@@ -56,6 +56,68 @@ import {
   DialogTitle,
 } from './ui/dialog';
 
+// 🔑 NEW: PDF parsing imports and configuration (from UploadRecord.tsx)
+import * as pdfjsLib from "pdfjs-dist";
+import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+(pdfjsLib as any).GlobalWorkerOptions.workerSrc = workerSrc;
+
+// 🔑 NEW: Helper functions for PDF Text Extraction (from UploadRecord.tsx)
+async function extractTextFromPdf(file: File): Promise<string> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+  let fullText = "";
+
+  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const content = await page.getTextContent();
+
+    const strings = (content.items as any[])
+      .map((item) => ("str" in item ? item.str : ""))
+      .join(" ");
+
+    fullText += strings + "\n";
+  }
+
+  return fullText;
+}
+
+// 🔑 NEW: Helper function for parsing structured data from text (from UploadRecord.tsx)
+function parseHealthRecordFromText(text: string) {
+  const providerMatch = text.match(/Provider:\s*(.+?)\s+Medications:/);
+  const provider = providerMatch ? providerMatch[1].trim() : "";
+
+  const getSection = (name: string, nextName?: string) => {
+    const startIdx = text.indexOf(name + ":");
+    if (startIdx === -1) return "";
+
+    let start = startIdx + name.length + 1;
+    let end = nextName ? text.indexOf(nextName + ":", start) : text.length;
+    if (end === -1) end = text.length;
+
+    return text.slice(start, end).trim();
+  };
+
+  const toList = (section: string) =>
+    section
+      .split("- ")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  const medsStr = getSection("Medications", "Allergies");
+  const allergiesStr = getSection("Allergies", "Immunizations");
+  const immsStr = getSection("Immunizations", "Lab Results");
+  const labsStr = getSection("Lab Results");
+
+  return {
+    provider,
+    medications: toList(medsStr),
+    allergies: toList(allergiesStr),
+    immunizations: toList(immsStr),
+    lab_results: toList(labsStr),
+  };
+}
+
 // IMPORTANT: this must match the bucket ID in Supabase Storage
 const STORAGE_BUCKET = 'health-records';
 
@@ -435,10 +497,27 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
     }
 
     try {
+      var fileExtension = uploadFile.name.split(".").pop()?.toLowerCase();
+      let parsedFromPdf:
+        | {
+            provider: string;
+            medications: string[];
+            allergies: string[];
+            immunizations: string[];
+            lab_results: string[];
+          }
+        | null = null;
+
+      // 🔑 MODIFIED: Extraction and Parsing Logic for PDF files
+      if (fileExtension === "pdf") {
+        const rawText = await extractTextFromPdf(uploadFile);
+        parsedFromPdf = parseHealthRecordFromText(rawText);
+        console.log("Parsed from PDF:", parsedFromPdf);
+      }
+      
       // 1) Upload file to Supabase Storage
       const bucket = STORAGE_BUCKET;
       const path = `${patientId}/${Date.now()}-${uploadFile.name}`;
-
       const { error: storageError } = await supabase.storage
         .from(bucket)
         .upload(path, uploadFile, {
@@ -448,7 +527,6 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
 
       if (storageError) {
         console.error('Storage upload error:', storageError);
-
         if (storageError.message?.includes('Bucket not found')) {
           toast.error(
             `Storage bucket "${bucket}" not found. Create it in Supabase Storage or update STORAGE_BUCKET.`
@@ -456,47 +534,31 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
         } else {
           toast.error('Failed to upload file to storage.');
         }
-        return; // ⬅️ don’t continue if upload fails
+        return; 
       }
 
       // 2) Invoke parse-record Edge Function for THIS patient
-      // const { data: parseData, error: parseError } = await supabase.functions.invoke(
-      //   'parse-record',
-      //   {
-      //     body: {
-      //       bucket,
-      //       path,
-      //       userEmail: patientEmail,   // 🔹 parse as that patient's data
-      //     },
-      //   }
-      // );
-      // 2) Invoke parse-record Edge Function for THIS patient
-
-      // added 12/01 5:11pm
-      // 2) Invoke parse-record Edge Function for THIS patient
+      // 🔑 MODIFIED: Populate the parsed object with data from the PDF parser
       const parsed = {
-        provider: providerName || 'Unknown Provider',
-        medications: [],      // or some dummy values if you want
-        allergies: [],
-        lab_results: [],
-        immunizations: [],
+        provider: parsedFromPdf?.provider || providerName || 'Unknown Provider',
+        medications: parsedFromPdf?.medications || [],
+        allergies: parsedFromPdf?.allergies || [],
+        lab_results: parsedFromPdf?.lab_results || [],
+        immunizations: parsedFromPdf?.immunizations || [],
       };
-
+      
       const { data: parseData, error: parseError } = await supabase.functions.invoke(
         'parse-record',
         {
           body: {
-            userEmail: patientEmail,   // ✅ required by index.ts
-            parsed,                    // ✅ required by index.ts
-            fileName: uploadFile.name, // ✅ used in health_records insert
-            filePath: path,            // ✅ `${patientId}/${Date.now()}-${uploadFile.name}`
-            // (optional) you can also still pass bucket if you want:
-            // bucket,
+            targetPatientEmail: patientEmail, // The patient whose record is being updated
+            userEmail: providerEmail, // The provider uploading the data (for logging/audit)
+            parsed, // The populated data
+            fileName: uploadFile.name,
+            filePath: path, 
           },
         }
       );
-
-
 
       if (parseError) {
         console.error('parse-record error:', parseError);
@@ -514,26 +576,20 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
         visit: 'Clinical Note',
         other: 'Other',
       };
-
       const fileNameWithoutExtension = uploadFile.name.replace(/\.[^/.]+$/, '');
-      const fileExtension = uploadFile.name.match(/\.[^/.]+$/)?.at(0) || '';
-
+      fileExtension = uploadFile.name.match(/\.[^/.]+$/)?.at(0) || '';
       const newDocument: PatientDocument = {
         id: String(Date.now()),
         name: fileNameWithoutExtension,
         type: typeMap[uploadDocumentType] || 'Other',
-        date: new Date().toLocaleDateString('en-US', {
-          month: '2-digit',
-          day: '2-digit',
-          year: 'numeric',
-        }),
+        date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', }),
         url: URL.createObjectURL(uploadFile),
         fileExtension,
         patientId,
         notes: uploadNotes || undefined,
       };
-
       setPatientDocuments(prev => [newDocument, ...prev]);
+
     } catch (err) {
       console.error('Error in handleUploadData (upload branch):', err);
       toast.error('Unexpected error while uploading data.');
@@ -541,7 +597,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
     }
   } else {
     // 🔹 keep your existing manual entry branch here (unchanged)
-    // ...
+    // ... (Your existing manual entry logic)
   }
 
   // Reset form + close dialog (keep this part as you already have)
