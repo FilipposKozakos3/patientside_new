@@ -374,7 +374,7 @@ export default function App() {
                   </TabsContent>
 
                   <TabsContent value="upload" className="mt-0">
-                    <UploadRecord onRecordAdded={handleRefresh} />
+                    <UploadRecord onRecordUpdate={handleRefresh} />
                   </TabsContent>
 
                   <TabsContent value="providers" className="mt-0">
