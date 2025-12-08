@@ -3,7 +3,7 @@ import { supabase } from '../supabase/supabaseClient'; // Corrected path
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Avatar, AvatarFallback } from './ui/avatar';
-import { Plus, UserCircle, Loader2 } from 'lucide-react';
+import { Plus, UserCircle, Loader2, Eye, FileText } from 'lucide-react'; // 🔑 ADDED: Eye and FileText icons
 import {
   Dialog,
   DialogContent,
@@ -16,6 +16,10 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { toast } from 'sonner@2.0.3';
 import { Alert, AlertDescription, AlertTitle } from './ui/alert';
+import { Separator } from './ui/separator'; // 🔑 ADDED: Separator for sectioning
+
+// Define the name of your storage bucket
+const STORAGE_BUCKET = 'health-records'; // 🔑 Assuming this is the bucket name
 
 // 1. Updated Provider Interface to match database join structure
 interface LinkedProvider {
@@ -25,35 +29,109 @@ interface LinkedProvider {
   access_granted_at: string; 
 }
 
+// 🔑 NEW: Health Record Interface
+interface HealthRecord {
+  id: number;
+  file_name: string;
+  file_path: string; // Path in storage (e.g., 'patient_id/timestamp-file.pdf')
+  document_type: string;
+  provider_name: string | null;
+  uploaded_at: string;
+  // Assuming the health_records table uses 'email' for linking as per previous context
+  email: string;
+}
+
 // 2. Removed the patientId prop from the interface and function signature
-//    as we will fetch it inside useEffect.
 export function ProviderManager() {
   const [providers, setProviders] = useState<LinkedProvider[]>([]);
+  // 🔑 NEW: State for Records
+  const [patientRecords, setPatientRecords] = useState<HealthRecord[]>([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [documentToView, setDocumentToView] = useState<{ url: string, name: string } | null>(null);
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [searchEmail, setSearchEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [dialogError, setDialogError] = useState('');
 
+  // --- Utility Functions ---
+  const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+  };
+
+  //console.log('ProviderManager Component Loaded');
+
+  // 🔑 NEW: Function to generate a signed URL for document preview
+  const handlePreviewDocument = async (record: HealthRecord) => {
+    // Generate a temporary, time-limited URL for the document (e.g., 60 seconds)
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrl(record.file_path, 60); 
+
+    if (error) {
+      console.error('Error generating signed URL:', error);
+      toast.error('Failed to get document link. Check storage permissions.');
+      return;
+    }
+
+    if (data?.signedUrl) {
+      // Set the state to open the dialog and display the document
+      setDocumentToView({ url: data.signedUrl, name: record.file_name });
+    } else {
+      toast.error('Document access failed.');
+    }
+  };
+
+
+  // 🔑 NEW: Function to load patient records
+  const loadPatientRecords = async (patientEmail: string) => {
+    setRecordsLoading(true);
+    //console.log('Querying health_records for email:', patientEmail);
+
+    const { data: records, error: recordsError } = await supabase
+      .from('health_records')
+      .select('*')
+      .eq('email', patientEmail) // Filter records by the patient's email
+      .order('uploaded_at', { ascending: false });
+
+    setRecordsLoading(false);
+
+    if (recordsError) {
+        console.error('Error loading patient records:', recordsError);
+        toast.error('Failed to load patient health records.');
+        return;
+    }
+    //console.log('Records returned:', records);
+    setPatientRecords(records as HealthRecord[]);
+  };
+
+
   // --- Fetching Providers from Supabase ---
   useEffect(() => {
-    loadProviders();
+    const init = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        const patientId = user?.id;
+        const patientEmail = user?.email; // 🔑 Get email for record fetching
+        
+        if (!patientId || !patientEmail) {
+            setDialogError("You must be logged in to view your data.");
+            return;
+        }
+
+        // Load Providers
+        setLoading(true);
+        loadProviders(patientId); // Existing provider loading function
+
+        // Load Records
+        loadPatientRecords(patientEmail); // 🔑 NEW: Load patient records
+    };
+    init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run only on initial mount
 
-  const loadProviders = async () => {
-    setLoading(true);
+  const loadProviders = async (patientId: string) => {
+    // ... (Your existing loadProviders logic remains unchanged)
     setDialogError('');
-
-    // 🔑 FIX 1: Safely get the current user ID from the Supabase session
-    const { data: { user } } = await supabase.auth.getUser();
-    const patientId = user?.id;
-    
-    if (!patientId) {
-        setLoading(false);
-        // This should not happen if the component is protected, but serves as a safeguard
-        setDialogError("You must be logged in to view providers.");
-        return;
-    }
 
     // 🔑 FIX 2: Correct the query syntax and select only existing columns
     // The role is case-sensitive, assuming 'provider' (lowercase) is correct.
@@ -93,8 +171,9 @@ export function ProviderManager() {
         setProviders(linkedProviders);
     }
   };
-
+  
   // --- Adding/Linking a Provider by Email ---
+  // ... (handleAddProvider remains unchanged)
   const handleAddProvider = async () => {
     setDialogError('');
     const currentPatientId = (await supabase.auth.getUser()).data.user?.id;
@@ -153,10 +232,11 @@ export function ProviderManager() {
     toast.success(`${providerProfile.full_name} successfully linked!`);
     setIsDialogOpen(false);
     setSearchEmail('');
-    loadProviders(); // Refresh the list
+    loadProviders(currentPatientId); // Refresh the list
   };
 
   // --- Removing the Link ---
+  // ... (handleRemoveProvider remains unchanged)
   const handleRemoveProvider = async (providerId: string) => {
     const currentPatientId = (await supabase.auth.getUser()).data.user?.id;
     if (!currentPatientId) return;
@@ -176,17 +256,15 @@ export function ProviderManager() {
       toast.error('Failed to remove provider.');
     } else {
       toast.success('Provider access revoked successfully.');
-      loadProviders(); 
+      loadProviders(currentPatientId); 
     }
   };
 
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
-  };
 
   return (
     <Card className="bg-white shadow-sm">
       <CardHeader className="pb-4">
+        {/* ... (Existing CardHeader and Add Provider Dialog remain here) */}
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-xl font-semibold text-gray-900">
@@ -317,6 +395,91 @@ export function ProviderManager() {
           </div>
         )}
       </CardContent>
+
+      <Separator className="my-6" />
+
+      {/* 🔑 NEW: Section for Health Records */}
+      <CardHeader className="pb-4">
+        <CardTitle className="text-xl font-semibold text-gray-900">
+          Your Shared Health Records
+        </CardTitle>
+        <CardDescription className="mt-1">
+          These are the records your linked providers can view.
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="pt-0">
+        {recordsLoading ? (
+            <div className="text-center py-6 text-gray-500">
+                <Loader2 className="w-6 h-6 mx-auto mb-2 text-blue-500 animate-spin" />
+                <p className="text-sm">Loading records...</p>
+            </div>
+        ) : patientRecords.length === 0 ? (
+            <div className="text-center py-6 text-gray-500">
+                <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <p className="text-sm">No health records found.</p>
+            </div>
+        ) : (
+            <div className="space-y-3">
+                {patientRecords.map((record) => (
+                    <div
+                        key={record.id}
+                        className="flex items-center justify-between p-3 border rounded-lg bg-white"
+                    >
+                        <div className="flex items-center space-x-3 min-w-0">
+                            <FileText className="w-5 h-5 text-gray-500 flex-shrink-0" />
+                            <div className="min-w-0">
+                                <p className="text-sm font-medium truncate text-gray-800">
+                                    {record.file_name}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                    {record.document_type} from {record.provider_name || 'Unknown'}
+                                </p>
+                            </div>
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePreviewDocument(record)}
+                            className="flex items-center gap-1 text-sm h-8 px-3"
+                        >
+                            <Eye className="w-4 h-4" />
+                            Preview
+                        </Button>
+                    </div>
+                ))}
+            </div>
+        )}
+      </CardContent>
+
+      {/* 🔑 NEW: Document Preview Dialog */}
+      <Dialog 
+          open={!!documentToView} 
+          onOpenChange={(open) => !open && setDocumentToView(null)}
+      >
+        <DialogContent className="max-w-4xl h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Document Preview: {documentToView?.name}</DialogTitle>
+            <DialogDescription>
+                This is a secure, temporary view of your uploaded document.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-grow w-full h-[calc(100%-60px)]">
+            {documentToView?.url ? (
+                // Use an iframe to embed the PDF/document content
+                <iframe
+                    src={documentToView.url}
+                    className="w-full h-full border rounded-md"
+                    title={documentToView.name}
+                />
+            ) : (
+                <div className="text-center py-10">
+                    <p>Loading document...</p>
+                </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
