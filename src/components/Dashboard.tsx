@@ -87,7 +87,7 @@ export function Dashboard({
           .from("health_records")
           .select("*")
           .eq("email", email)
-          .order("created_at", { ascending: false })
+          .order("uploaded_at", { ascending: false })
           .limit(5);
 
         if (dbHealthError) {
@@ -96,26 +96,56 @@ export function Dashboard({
 
         const dbRecentMapped =
           dbHealthRecords?.map((row) => {
-            // Map each DB row into a shape compatible with your existing UI
             return {
               id: row.id,
-              // Treat provider-uploaded PDFs as generic "document" records
               category: "document",
-              dateAdded: row.created_at || new Date().toISOString(),
+              dateAdded: row.uploaded_at || row.created_at || new Date().toISOString(),
               provider: row.provider_name || "Provider",
+
+              // 🔹 OPTIONAL: keep a direct filePath field too (RecordViewer checks this)
+              filePath: row.file_path,
+
               resource: {
                 resourceType: "DocumentReference",
+                status: "current",
                 type: { text: row.file_name },
+                date: row.uploaded_at || row.created_at,
                 content: [
                   {
                     attachment: {
                       title: row.file_name,
+                      contentType: "application/pdf",    // or row.document_type
+                      url: row.file_path,                // IMPORTANT: path in bucket
                     },
                   },
                 ],
               },
             };
           }) ?? [];
+
+
+        // const dbRecentMapped =
+        //   dbHealthRecords?.map((row) => {
+        //     // Map each DB row into a shape compatible with your existing UI
+        //     return {
+        //       id: row.id,
+        //       // Treat provider-uploaded PDFs as generic "document" records
+        //       category: "document",
+        //       dateAdded: row.created_at || new Date().toISOString(),
+        //       provider: row.provider_name || "Provider",
+        //       resource: {
+        //         resourceType: "DocumentReference",
+        //         type: { text: row.file_name },
+        //         content: [
+        //           {
+        //             attachment: {
+        //               title: row.file_name,
+        //             },
+        //           },
+        //         ],
+        //       },
+        //     };
+        //   }) ?? [];
 
         // Put DB-based records first, then local ones, and cap at 5 total
         combinedRecent = [...dbRecentMapped, ...sortedLocal].slice(0, 5);

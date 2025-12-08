@@ -1,9 +1,300 @@
-import { StoredHealthRecord } from '../types/fhir';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
-import { Badge } from './ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Separator } from './ui/separator';
-import { Calendar, User, FileText, AlertCircle } from 'lucide-react';
+// import { useEffect, useMemo, useState } from "react";
+// import { StoredHealthRecord } from "../types/fhir";
+// import {
+//   Dialog,
+//   DialogContent,
+//   DialogDescription,
+//   DialogHeader,
+//   DialogTitle,
+// } from "./ui/dialog";
+// import { Badge } from "./ui/badge";
+// import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+// import { Separator } from "./ui/separator";
+// import { Calendar, FileText, AlertCircle } from "lucide-react";
+// import { supabase } from "../supabase/supabaseClient";
+
+// interface RecordViewerProps {
+//   record: StoredHealthRecord | null;
+//   isOpen: boolean;
+//   onClose: () => void;
+// }
+
+// const STORAGE_BUCKET = "health-records";
+
+// // helper function for opening pdf in a new tab from base64
+// function base64ToBlobUrl(base64: string, contentType: string) {
+//   const byteCharacters = atob(base64);
+//   const byteNumbers = new Array(byteCharacters.length);
+//   for (let i = 0; i < byteCharacters.length; i++) {
+//     byteNumbers[i] = byteCharacters.charCodeAt(i);
+//   }
+//   const byteArray = new Uint8Array(byteNumbers);
+//   const blob = new Blob([byteArray], {
+//     type: contentType || "application/pdf",
+//   });
+//   return URL.createObjectURL(blob);
+// }
+
+// export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
+//   const [signedPdfUrl, setSignedPdfUrl] = useState<string | null>(null);
+
+//   if (!record) return null;
+
+//   const resource = record.resource;
+
+//   const consent = record.consent ?? {
+//     consentGiven: false,
+//     sharedWith: [],
+//     lastShared: null,
+//   };
+
+//   const isDocument = resource.resourceType === "DocumentReference";
+//   const firstAttachment = isDocument
+//     ? (resource as any).content?.[0]?.attachment
+//     : null;
+
+//   // 1) base64 inline preview (old path)
+//   const inlinePdfUrl =
+//     firstAttachment?.data && firstAttachment?.contentType?.includes("pdf")
+//       ? base64ToBlobUrl(firstAttachment.data, firstAttachment.contentType)
+//       : null;
+
+//   // 2) potential storage path (new path)
+//   const storagePath = useMemo(() => {
+//     if (record.filePath) return record.filePath;
+
+//     const url = firstAttachment?.url;
+
+//     // if it's already a real URL, don't treat as storage path
+//     if (typeof url === "string" && url.startsWith("http")) return null;
+
+//     return typeof url === "string" ? url : null;
+//   }, [record.filePath, firstAttachment?.url]);
+
+//   useEffect(() => {
+//     let cancelled = false;
+
+//     const makeSignedUrl = async () => {
+//       setSignedPdfUrl(null);
+
+//       if (!isOpen || !isDocument) return;
+
+//       // if we already have inline base64, use that
+//       if (inlinePdfUrl) return;
+
+//       if (!storagePath) return;
+
+//       const { data, error } = await supabase.storage
+//         .from(STORAGE_BUCKET)
+//         .createSignedUrl(storagePath, 60 * 60); // 1 hour
+
+//       if (error) {
+//         console.error("Failed to create signed URL:", error);
+//         return;
+//       }
+
+//       if (!cancelled) {
+//         setSignedPdfUrl(data?.signedUrl ?? null);
+//       }
+//     };
+
+//     makeSignedUrl();
+
+//     return () => {
+//       cancelled = true;
+//     };
+//   }, [isOpen, isDocument, inlinePdfUrl, storagePath]);
+
+//   const previewUrl = inlinePdfUrl || signedPdfUrl;
+
+//   // ✅ NOW it's safe to return early
+//   if (!record || !resource) return null;
+
+//   const renderResourceDetails = () => {
+//     switch (resource.resourceType) {
+//       // ✅ keep all your other cases exactly the same
+
+//       case "DocumentReference": {
+//         const document = resource as any;
+
+//         return (
+//           <div className="space-y-4">
+//             <div>
+//               <h4 className="text-sm text-gray-500 mb-1">Document Type</h4>
+//               <p>{document.type?.text ?? document.content?.[0]?.attachment?.title ?? "Document"}</p>
+//             </div>
+
+//             <div>
+//               <h4 className="text-sm text-gray-500 mb-1">Status</h4>
+//               <Badge>{document.status ?? "current"}</Badge>
+//             </div>
+
+//             {document.date && (
+//               <div>
+//                 <h4 className="text-sm text-gray-500 mb-1">Date</h4>
+//                 <p>{new Date(document.date).toLocaleDateString()}</p>
+//               </div>
+//             )}
+
+//             {document.content && document.content.length > 0 && (
+//               <div>
+//                 <h4 className="text-sm text-gray-500 mb-1">Content</h4>
+//                 {document.content.map((c: any, i: number) => (
+//                   <div key={i} className="bg-gray-50 p-3 rounded">
+//                     <p className="text-sm">
+//                       Type: {c.attachment.contentType || "Unknown"}
+//                     </p>
+//                     {c.attachment.title && (
+//                       <p className="text-sm">Title: {c.attachment.title}</p>
+//                     )}
+
+//                     {previewUrl ? (
+//                       <a
+//                         className="text-sm mt-2 text-blue-600 underline inline-block"
+//                         href={previewUrl}
+//                         target="_blank"
+//                         rel="noopener"
+//                       >
+//                         Open document in new tab
+//                       </a>
+//                     ) : (
+//                       <p className="text-xs text-gray-500 mt-2">
+//                         File preview is not available for this record.
+//                       </p>
+//                     )}
+//                   </div>
+//                 ))}
+//               </div>
+//             )}
+
+//             {previewUrl && (
+//               <div className="mt-4 h-96 border rounded overflow-hidden">
+//                 <iframe
+//                   src={previewUrl}
+//                   className="w-full h-full"
+//                   title="PDF preview"
+//                 />
+//               </div>
+//             )}
+//           </div>
+//         );
+//       }
+
+//       default:
+//         return (
+//           <div>
+//             <pre className="bg-gray-50 p-4 rounded text-sm overflow-auto">
+//               {JSON.stringify(resource, null, 2)}
+//             </pre>
+//           </div>
+//         );
+//     }
+//   };
+
+//   return (
+//     <Dialog open={isOpen} onOpenChange={onClose}>
+//       <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+//         <DialogHeader>
+//           <DialogTitle>Health Record Details</DialogTitle>
+//           <DialogDescription>
+//             FHIR Resource Type: {resource.resourceType}
+//           </DialogDescription>
+//         </DialogHeader>
+
+//         <div className="space-y-6">
+//           <Card>
+//             <CardHeader>
+//               <CardTitle className="text-base">Record Information</CardTitle>
+//             </CardHeader>
+//             <CardContent className="space-y-3">
+//               <div className="flex items-center gap-2 text-sm">
+//                 <FileText className="w-4 h-4 text-gray-500" />
+//                 <span className="text-gray-500">ID:</span>
+//                 <code className="bg-gray-100 px-2 py-1 rounded text-xs">
+//                   {record.id}
+//                 </code>
+//               </div>
+//               <div className="flex items-center gap-2 text-sm">
+//                 <Calendar className="w-4 h-4 text-gray-500" />
+//                 <span className="text-gray-500">Added:</span>
+//                 <span>{new Date(record.dateAdded).toLocaleString()}</span>
+//               </div>
+//               <div className="flex items-center gap-2 text-sm">
+//                 <Calendar className="w-4 h-4 text-gray-500" />
+//                 <span className="text-gray-500">Last Modified:</span>
+//                 <span>
+//                   {record.lastModified
+//                     ? new Date(record.lastModified).toLocaleString()
+//                     : "—"}
+//                 </span>
+//               </div>
+//               <div className="flex items-center gap-2 text-sm">
+//                 <AlertCircle className="w-4 h-4 text-gray-500" />
+//                 <span className="text-gray-500">Category:</span>
+//                 <Badge>{record.category}</Badge>
+//               </div>
+//             </CardContent>
+//           </Card>
+
+//           <Separator />
+
+//           <Card>
+//             <CardHeader>
+//               <CardTitle className="text-base">Clinical Information</CardTitle>
+//             </CardHeader>
+//             <CardContent>{renderResourceDetails()}</CardContent>
+//           </Card>
+
+//           <Card>
+//             <CardHeader>
+//               <CardTitle className="text-base">Sharing & Consent</CardTitle>
+//             </CardHeader>
+//             <CardContent className="space-y-3">
+//               <div className="flex items-center gap-2 text-sm">
+//                 <span className="text-gray-500">Consent Status:</span>
+//                 <Badge variant={consent.consentGiven ? "default" : "outline"}>
+//                   {consent.consentGiven ? "Shareable" : "Private"}
+//                 </Badge>
+//               </div>
+
+//               {consent.sharedWith.length > 0 && (
+//                 <div>
+//                   <p className="text-sm text-gray-500 mb-2">Shared with:</p>
+//                   <div className="flex flex-wrap gap-2">
+//                     {consent.sharedWith.map((clinic, i) => (
+//                       <Badge key={i} variant="outline">
+//                         {clinic}
+//                       </Badge>
+//                     ))}
+//                   </div>
+//                 </div>
+//               )}
+
+//               {consent.lastShared && (
+//                 <div className="text-sm text-gray-500">
+//                   Last shared: {new Date(consent.lastShared).toLocaleString()}
+//                 </div>
+//               )}
+//             </CardContent>
+//           </Card>
+//         </div>
+//       </DialogContent>
+//     </Dialog>
+//   );
+// }
+
+import { StoredHealthRecord } from "../types/fhir";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "./ui/dialog";
+import { Badge } from "./ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Separator } from "./ui/separator";
+import { Calendar, FileText, AlertCircle } from "lucide-react";
 
 interface RecordViewerProps {
   record: StoredHealthRecord | null;
@@ -19,40 +310,49 @@ function base64ToBlobUrl(base64: string, contentType: string) {
     byteNumbers[i] = byteCharacters.charCodeAt(i);
   }
   const byteArray = new Uint8Array(byteNumbers);
-  const blob = new Blob([byteArray], { type: contentType || "application/pdf" });
+  const blob = new Blob([byteArray], {
+    type: contentType || "application/pdf",
+  });
   return URL.createObjectURL(blob);
 }
-
 
 export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
   if (!record) return null;
 
   const resource = record.resource;
 
-  // added for preview of the document
+  // Safe consent fallback (prevents crashes if old records lack consent)
+  const consent = record.consent ?? {
+    recordId: record.id,
+    sharedWith: [],
+    lastShared: undefined,
+    consentGiven: false,
+  };
 
+  // ----- Base64 PDF preview logic -----
   const isDocument = resource.resourceType === "DocumentReference";
   const firstAttachment = isDocument
-  ? (resource as any).content?.[0]?.attachment
-  : null;
-
-  const inlinePdfUrl =
-  firstAttachment?.data && firstAttachment?.contentType?.includes("pdf")
-    ? base64ToBlobUrl(firstAttachment.data, firstAttachment.contentType)
+    ? (resource as any).content?.[0]?.attachment
     : null;
 
-  
-    // end of the section
+  const inlinePdfUrl =
+    firstAttachment?.data &&
+    firstAttachment?.contentType?.toLowerCase?.().includes("pdf")
+      ? base64ToBlobUrl(firstAttachment.data, firstAttachment.contentType)
+      : null;
 
   const renderResourceDetails = () => {
     switch (resource.resourceType) {
-      case 'Patient':
+      case "Patient": {
         const patient = resource as any;
         return (
           <div className="space-y-4">
             <div>
               <h4 className="text-sm text-gray-500 mb-1">Full Name</h4>
-              <p>{patient.name?.[0]?.given?.join(' ')} {patient.name?.[0]?.family}</p>
+              <p>
+                {patient.name?.[0]?.given?.join(" ")}{" "}
+                {patient.name?.[0]?.family}
+              </p>
             </div>
             {patient.gender && (
               <div>
@@ -70,7 +370,9 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
               <div>
                 <h4 className="text-sm text-gray-500 mb-1">Contact</h4>
                 {patient.telecom.map((t: any, i: number) => (
-                  <p key={i}>{t.system}: {t.value}</p>
+                  <p key={i}>
+                    {t.system}: {t.value}
+                  </p>
                 ))}
               </div>
             )}
@@ -78,15 +380,18 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
               <div>
                 <h4 className="text-sm text-gray-500 mb-1">Address</h4>
                 <p>
-                  {patient.address[0].line?.join(', ')}<br />
-                  {patient.address[0].city}, {patient.address[0].state} {patient.address[0].postalCode}
+                  {patient.address[0].line?.join(", ")}
+                  <br />
+                  {patient.address[0].city}, {patient.address[0].state}{" "}
+                  {patient.address[0].postalCode}
                 </p>
               </div>
             )}
           </div>
         );
+      }
 
-      case 'MedicationStatement':
+      case "MedicationStatement": {
         const medication = resource as any;
         return (
           <div className="space-y-4">
@@ -101,18 +406,24 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
             {medication.effectivePeriod?.start && (
               <div>
                 <h4 className="text-sm text-gray-500 mb-1">Start Date</h4>
-                <p>{new Date(medication.effectivePeriod.start).toLocaleDateString()}</p>
+                <p>
+                  {new Date(medication.effectivePeriod.start).toLocaleDateString()}
+                </p>
               </div>
             )}
             {medication.effectivePeriod?.end && (
               <div>
                 <h4 className="text-sm text-gray-500 mb-1">End Date</h4>
-                <p>{new Date(medication.effectivePeriod.end).toLocaleDateString()}</p>
+                <p>
+                  {new Date(medication.effectivePeriod.end).toLocaleDateString()}
+                </p>
               </div>
             )}
             {medication.dosage && medication.dosage.length > 0 && (
               <div>
-                <h4 className="text-sm text-gray-500 mb-1">Dosage Instructions</h4>
+                <h4 className="text-sm text-gray-500 mb-1">
+                  Dosage Instructions
+                </h4>
                 {medication.dosage.map((d: any, i: number) => (
                   <p key={i}>{d.text}</p>
                 ))}
@@ -120,8 +431,9 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
             )}
           </div>
         );
+      }
 
-      case 'AllergyIntolerance':
+      case "AllergyIntolerance": {
         const allergy = resource as any;
         return (
           <div className="space-y-4">
@@ -131,7 +443,7 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
             </div>
             <div>
               <h4 className="text-sm text-gray-500 mb-1">Clinical Status</h4>
-              <Badge>{allergy.clinicalStatus?.coding?.[0]?.code || 'Unknown'}</Badge>
+              <Badge>{allergy.clinicalStatus?.coding?.[0]?.code || "Unknown"}</Badge>
             </div>
             {allergy.reaction && allergy.reaction.length > 0 && (
               <div>
@@ -152,8 +464,9 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
             )}
           </div>
         );
+      }
 
-      case 'Immunization':
+      case "Immunization": {
         const immunization = resource as any;
         return (
           <div className="space-y-4">
@@ -167,8 +480,12 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
             </div>
             {immunization.occurrenceDateTime && (
               <div>
-                <h4 className="text-sm text-gray-500 mb-1">Date Administered</h4>
-                <p>{new Date(immunization.occurrenceDateTime).toLocaleDateString()}</p>
+                <h4 className="text-sm text-gray-500 mb-1">
+                  Date Administered
+                </h4>
+                <p>
+                  {new Date(immunization.occurrenceDateTime).toLocaleDateString()}
+                </p>
               </div>
             )}
             {immunization.lotNumber && (
@@ -179,14 +496,17 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
             )}
             {immunization.performer && immunization.performer.length > 0 && (
               <div>
-                <h4 className="text-sm text-gray-500 mb-1">Administered By</h4>
+                <h4 className="text-sm text-gray-500 mb-1">
+                  Administered By
+                </h4>
                 <p>{immunization.performer[0].actor?.display}</p>
               </div>
             )}
           </div>
         );
+      }
 
-      case 'Observation':
+      case "Observation": {
         const observation = resource as any;
         return (
           <div className="space-y-4">
@@ -201,13 +521,18 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
             {observation.effectiveDateTime && (
               <div>
                 <h4 className="text-sm text-gray-500 mb-1">Date</h4>
-                <p>{new Date(observation.effectiveDateTime).toLocaleDateString()}</p>
+                <p>
+                  {new Date(observation.effectiveDateTime).toLocaleDateString()}
+                </p>
               </div>
             )}
             {observation.valueQuantity && (
               <div>
                 <h4 className="text-sm text-gray-500 mb-1">Result</h4>
-                <p>{observation.valueQuantity.value} {observation.valueQuantity.unit}</p>
+                <p>
+                  {observation.valueQuantity.value}{" "}
+                  {observation.valueQuantity.unit}
+                </p>
               </div>
             )}
             {observation.valueString && (
@@ -220,24 +545,26 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
               <div>
                 <h4 className="text-sm text-gray-500 mb-1">Category</h4>
                 <Badge variant="outline">
-                  {observation.category[0].coding?.[0]?.display || 'Lab'}
+                  {observation.category[0].coding?.[0]?.display || "Lab"}
                 </Badge>
               </div>
             )}
           </div>
         );
+      }
 
-      case 'DocumentReference':
+      case "DocumentReference": {
         const document = resource as any;
+
         return (
           <div className="space-y-4">
             <div>
               <h4 className="text-sm text-gray-500 mb-1">Document Type</h4>
-              <p>{document.type?.text}</p>
+              <p>{document.type?.text || "Document"}</p>
             </div>
             <div>
               <h4 className="text-sm text-gray-500 mb-1">Status</h4>
-              <Badge>{document.status}</Badge>
+              <Badge>{document.status || "current"}</Badge>
             </div>
             {document.date && (
               <div>
@@ -245,33 +572,57 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
                 <p>{new Date(document.date).toLocaleDateString()}</p>
               </div>
             )}
+
             {document.content && document.content.length > 0 && (
               <div>
                 <h4 className="text-sm text-gray-500 mb-1">Content</h4>
-                {document.content.map((c: any, i: number) => (
-                  <div key={i} className="bg-gray-50 p-3 rounded">
-                    <p className="text-sm">Type: {c.attachment.contentType}</p>
-                    {c.attachment.title && (
-                      <p className="text-sm">Title: {c.attachment.title}</p>
-                    )}
+                {document.content.map((c: any, i: number) => {
+                  const attachment = c?.attachment ?? {};
+                  const title = attachment.title ?? "document.pdf";
+                  const contentType = attachment.contentType ?? "application/pdf";
+                  const hasBase64 = Boolean(attachment.data);
 
+                  const thisPdfUrl =
+                    hasBase64 && contentType.toLowerCase().includes("pdf")
+                      ? base64ToBlobUrl(attachment.data, contentType)
+                      : null;
 
-                    {inlinePdfUrl && (
-                      <a
-                        className="text-sm mt-2 text-blue-600 underline"
-                        href={inlinePdfUrl}
-                        target="_blank"
-                        rel="noopener"
-                      >
-                        Open document in new tab
-                      </a>
-                    )}
+                  return (
+                    <div key={i} className="bg-gray-50 p-3 rounded">
+                      <p className="text-sm">Type: {contentType}</p>
+                      <p className="text-sm">Title: {title}</p>
 
-                  </div>
-                ))}
+                      {thisPdfUrl ? (
+                        <div className="flex gap-3 mt-2">
+                          <a
+                            className="text-sm text-blue-600 underline"
+                            href={thisPdfUrl}
+                            target="_blank"
+                            rel="noopener"
+                          >
+                            Open document in new tab
+                          </a>
+                          <a
+                            className="text-sm text-blue-600 underline"
+                            href={thisPdfUrl}
+                            download={title}
+                          >
+                            Download
+                          </a>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500 mt-2">
+                          No embedded file data found. This record must include
+                          attachment.data (base64) for preview/download.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
+            {/* Preview using the FIRST attachment base64, if available */}
             {inlinePdfUrl && (
               <div className="mt-4 h-96 border rounded overflow-hidden">
                 <iframe
@@ -283,6 +634,7 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
             )}
           </div>
         );
+      }
 
       default:
         return (
@@ -315,18 +667,27 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
               <div className="flex items-center gap-2 text-sm">
                 <FileText className="w-4 h-4 text-gray-500" />
                 <span className="text-gray-500">ID:</span>
-                <code className="bg-gray-100 px-2 py-1 rounded text-xs">{record.id}</code>
+                <code className="bg-gray-100 px-2 py-1 rounded text-xs">
+                  {record.id}
+                </code>
               </div>
+
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="w-4 h-4 text-gray-500" />
                 <span className="text-gray-500">Added:</span>
                 <span>{new Date(record.dateAdded).toLocaleString()}</span>
               </div>
+
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="w-4 h-4 text-gray-500" />
                 <span className="text-gray-500">Last Modified:</span>
-                <span>{new Date(record.lastModified).toLocaleString()}</span>
+                <span>
+                  {record.lastModified
+                    ? new Date(record.lastModified).toLocaleString()
+                    : "—"}
+                </span>
               </div>
+
               <div className="flex items-center gap-2 text-sm">
                 <AlertCircle className="w-4 h-4 text-gray-500" />
                 <span className="text-gray-500">Category:</span>
@@ -342,9 +703,7 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
             <CardHeader>
               <CardTitle className="text-base">Clinical Information</CardTitle>
             </CardHeader>
-            <CardContent>
-              {renderResourceDetails()}
-            </CardContent>
+            <CardContent>{renderResourceDetails()}</CardContent>
           </Card>
 
           {/* Consent Information */}
@@ -355,23 +714,27 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-gray-500">Consent Status:</span>
-                <Badge variant={record.consent.consentGiven ? "default" : "outline"}>
-                  {record.consent.consentGiven ? 'Shareable' : 'Private'}
+                <Badge variant={consent.consentGiven ? "default" : "outline"}>
+                  {consent.consentGiven ? "Shareable" : "Private"}
                 </Badge>
               </div>
-              {record.consent.sharedWith.length > 0 && (
+
+              {consent.sharedWith?.length > 0 && (
                 <div>
                   <p className="text-sm text-gray-500 mb-2">Shared with:</p>
                   <div className="flex flex-wrap gap-2">
-                    {record.consent.sharedWith.map((clinic, i) => (
-                      <Badge key={i} variant="outline">{clinic}</Badge>
+                    {consent.sharedWith.map((clinic: string, i: number) => (
+                      <Badge key={i} variant="outline">
+                        {clinic}
+                      </Badge>
                     ))}
                   </div>
                 </div>
               )}
-              {record.consent.lastShared && (
+
+              {consent.lastShared && (
                 <div className="text-sm text-gray-500">
-                  Last shared: {new Date(record.consent.lastShared).toLocaleString()}
+                  Last shared: {new Date(consent.lastShared).toLocaleString()}
                 </div>
               )}
             </CardContent>
@@ -381,3 +744,4 @@ export function RecordViewer({ record, isOpen, onClose }: RecordViewerProps) {
     </Dialog>
   );
 }
+
