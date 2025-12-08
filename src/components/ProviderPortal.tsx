@@ -82,6 +82,43 @@ async function extractTextFromPdf(file: File): Promise<string> {
   return fullText;
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.onload = () => {
+      const result = reader.result as string;
+      // result is like: "data:application/pdf;base64,XXXX"
+      const base64 = result.split(",")[1];
+      resolve(base64);
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function buildDocumentReferenceFromFile(file: File, patientId: string) {
+  const now = new Date().toISOString();
+
+  return {
+    resourceType: "DocumentReference",
+    id: crypto.randomUUID(),
+    status: "current",
+    type: { text: file.name },
+    subject: { reference: `Patient/${patientId}` },
+    date: now,
+    content: [
+      {
+        attachment: {
+          contentType: file.type || "application/pdf",
+          title: file.name,
+          // ✅ data will be injected after base64 conversion
+        },
+      },
+    ],
+  };
+}
+
+
 // 🔑 NEW: Helper function for parsing structured data from text (from UploadRecord.tsx)
 function parseHealthRecordFromText(text: string) {
   const providerMatch = text.match(/Provider:\s*(.+?)\s+Medications:/);
@@ -477,6 +514,8 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
     return;
   }
 
+
+
   const patientEmail = selectedPatient.email;
   const patientId = selectedPatient.id;
 
@@ -539,13 +578,21 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
 
       // 2) Invoke parse-record Edge Function for THIS patient
       // 🔑 MODIFIED: Populate the parsed object with data from the PDF parser
+      // const parsed = {
+      //   provider: parsedFromPdf?.provider || providerName || 'Unknown Provider',
+      //   medications: parsedFromPdf?.medications || [],
+      //   allergies: parsedFromPdf?.allergies || [],
+      //   lab_results: parsedFromPdf?.lab_results || [],
+      //   immunizations: parsedFromPdf?.immunizations || [],
+      // };
       const parsed = {
-        provider: parsedFromPdf?.provider || providerName || 'Unknown Provider',
+        provider: providerName || "Unknown Provider", // uploader name
         medications: parsedFromPdf?.medications || [],
         allergies: parsedFromPdf?.allergies || [],
         lab_results: parsedFromPdf?.lab_results || [],
         immunizations: parsedFromPdf?.immunizations || [],
       };
+
       
       const { data: parseData, error: parseError } = await supabase.functions.invoke(
         'parse-record',
@@ -553,6 +600,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
           body: {
             targetPatientEmail: patientEmail, // The patient whose record is being updated
             userEmail: providerEmail, // The provider uploading the data (for logging/audit)
+            uploaderName: providerName,        // NEW
             parsed, // The populated data
             fileName: uploadFile.name,
             filePath: path, 

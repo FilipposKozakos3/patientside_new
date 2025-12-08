@@ -149,15 +149,34 @@ export interface HealthRecordConsent {
   consentGiven: boolean;
 }
 
+// export interface StoredHealthRecord {
+//   id: string;
+//   resource: FHIRResource;
+//   consent: HealthRecordConsent;
+//   category: 'patient' | 'medication' | 'allergy' | 'immunization' | 'observation' | 'document';
+//   dateAdded: string;
+//   lastModified: string;
+//   visitDate?: string; // Date of medical visit/encounter
+//   provider?: string; // Healthcare provider who created/uploaded the record
+//   tags?: string[];
+//   encrypted?: boolean;
+// }
+
 export interface StoredHealthRecord {
   id: string;
-  resource: FHIRResource;
+  resource: HealthRecordResource;
   consent: HealthRecordConsent;
   category: 'patient' | 'medication' | 'allergy' | 'immunization' | 'observation' | 'document';
   dateAdded: string;
   lastModified: string;
-  visitDate?: string; // Date of medical visit/encounter
-  provider?: string; // Healthcare provider who created/uploaded the record
+  visitDate?: string;
+  provider?: string;
   tags?: string[];
   encrypted?: boolean;
+
+  /**
+   * Path inside Supabase Storage bucket "health-records"
+   */
+  filePath?: string | null;
 }
+
