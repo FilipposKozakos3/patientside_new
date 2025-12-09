@@ -325,7 +325,7 @@ export function UploadRecord({ user, onRecordUpdate }: UploadRecordProps) {
           email: patientEmail,
           file_name: fileName,
           file_path: filePath,
-          document_type: 'application/pdf',
+          document_type: manualData.type, // changed this line from application/pdf
           provider_name: manualData.provider || null,
           uploaded_at: new Date().toISOString(),
         });

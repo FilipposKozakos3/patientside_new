@@ -174,9 +174,30 @@ export function Dashboard({
           .select("id", { count: "exact", head: true })
           .eq("email", email);
 
+        // ✅ Add manual-entry counts stored in health_records
+        const { count: manualMedCount } = await supabase
+          .from("health_records")
+          .select("id", { count: "exact", head: true })
+          .eq("email", email)
+          .eq("document_type", "medication");
+
+        const { count: manualAllergyCount } = await supabase
+          .from("health_records")
+          .select("id", { count: "exact", head: true })
+          .eq("email", email)
+          .eq("document_type", "allergy");
+
+        // added the above 12/09
+
         if (typeof medsDbCount === "number") medCount = medsDbCount;
         if (typeof allergiesDbCount === "number") allergyCount = allergiesDbCount;
         if (typeof labsDbCount === "number") labCount = labsDbCount;
+
+        // adding this
+        // ✅ then add manual on top
+        if (typeof manualMedCount === "number") medCount += manualMedCount;
+        if (typeof manualAllergyCount === "number") allergyCount += manualAllergyCount;
+        //
       }
     } catch (e) {
       console.error("Error loading DB stats or records:", e);
