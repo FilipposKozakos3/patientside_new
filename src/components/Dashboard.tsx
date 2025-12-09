@@ -100,7 +100,8 @@ export function Dashboard({
               id: row.id,
               category: "document",
               dateAdded: row.uploaded_at || row.created_at || new Date().toISOString(),
-              provider: row.provider_name || "Provider",
+              provider: row.provider_name, // Keep provider_name for reference, but we'll check if it's a patient upload
+              isPatientUpload: true, // Mark as patient upload since it's from patient's email
 
               // 🔹 OPTIONAL: keep a direct filePath field too (RecordViewer checks this)
               filePath: row.file_path,
@@ -173,9 +174,30 @@ export function Dashboard({
           .select("id", { count: "exact", head: true })
           .eq("email", email);
 
+        // ✅ Add manual-entry counts stored in health_records
+        const { count: manualMedCount } = await supabase
+          .from("health_records")
+          .select("id", { count: "exact", head: true })
+          .eq("email", email)
+          .eq("document_type", "medication");
+
+        const { count: manualAllergyCount } = await supabase
+          .from("health_records")
+          .select("id", { count: "exact", head: true })
+          .eq("email", email)
+          .eq("document_type", "allergy");
+
+        // added the above 12/09
+
         if (typeof medsDbCount === "number") medCount = medsDbCount;
         if (typeof allergiesDbCount === "number") allergyCount = allergiesDbCount;
         if (typeof labsDbCount === "number") labCount = labsDbCount;
+
+        // adding this
+        // ✅ then add manual on top
+        if (typeof manualMedCount === "number") medCount += manualMedCount;
+        if (typeof manualAllergyCount === "number") allergyCount += manualAllergyCount;
+        //
       }
     } catch (e) {
       console.error("Error loading DB stats or records:", e);
@@ -256,6 +278,10 @@ export function Dashboard({
   };
 
   const getUploaderLabel = (record: any): string => {
+    // If this is marked as a patient upload, always show "You"
+    if (record.isPatientUpload) {
+      return "You";
+    }
     // Manual/provider records store provider on the record object
     if (record.provider) {
       return record.provider;
