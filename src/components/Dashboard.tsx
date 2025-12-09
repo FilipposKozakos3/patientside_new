@@ -100,7 +100,8 @@ export function Dashboard({
               id: row.id,
               category: "document",
               dateAdded: row.uploaded_at || row.created_at || new Date().toISOString(),
-              provider: row.provider_name || "Provider",
+              provider: row.provider_name, // Keep provider_name for reference, but we'll check if it's a patient upload
+              isPatientUpload: true, // Mark as patient upload since it's from patient's email
 
               // 🔹 OPTIONAL: keep a direct filePath field too (RecordViewer checks this)
               filePath: row.file_path,
@@ -256,6 +257,10 @@ export function Dashboard({
   };
 
   const getUploaderLabel = (record: any): string => {
+    // If this is marked as a patient upload, always show "You"
+    if (record.isPatientUpload) {
+      return "You";
+    }
     // Manual/provider records store provider on the record object
     if (record.provider) {
       return record.provider;
