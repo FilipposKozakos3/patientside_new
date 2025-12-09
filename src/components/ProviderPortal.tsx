@@ -590,19 +590,25 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
           immunizations: parsedFromPdf?.immunizations || [],
         };
 
-        const { error: dbError } = await supabase.from('patient_documents').insert({
-          patient_id: patientId,
-          provider_id: providerId,
-          type: uploadDocumentType,
-          file_name: uploadFile.name,
-          file_path: path,
-          notes: uploadNotes,
-          // Store parsed data if available
-          structured_data: parsed,
-        });
+        const { data: parseData, error: parseError } = await supabase.functions.invoke(
+          'parse-record',
+          {
+            body: {
+              targetPatientEmail: patientEmail, // The patient whose record is being updated
+              userEmail: providerEmail, // The provider uploading the data (for logging/audit)
+              parsed, // The populated data
+              fileName: uploadFile.name,
+              filePath: path, 
+            },
+          }
+        );
 
-        if (dbError) {
-          throw new Error(dbError.message);
+        if (parseError) {
+          console.error('parse-record error:', parseError);
+          toast.error('File uploaded, but failed to parse health data.');
+        } else {
+          console.log('parse-record response:', parseData);
+          toast.success(`Data uploaded and parsed for ${selectedPatient.name}`);
         }
 
         toast.success(`Document uploaded and record created for ${selectedPatient.name}.`);
