@@ -11,7 +11,8 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 
 import { supabase } from '../supabase/supabaseClient';
-import { toast } from 'sonner@2.0.3'; 
+import { toast } from 'sonner@2.0.3';
+import jsPDF from 'jspdf'; 
 
 // Configure pdf.js worker
 import * as pdfjsLib from "pdfjs-dist";
@@ -34,6 +35,81 @@ async function extractTextFromPdf(file: File): Promise<string> {
   }
 
   return fullText;
+}
+
+// Extract provider name from PDF text using various patterns
+function extractProviderName(text: string): string | null {
+  if (!text) return null;
+
+  // Try various patterns to find provider name - be very specific and limit capture
+  const patterns = [
+    // Pattern 1: "Provider: Name" followed by newline or common keywords
+    /Provider:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})(?:\s*[,\s]*(?:MD|DO|RN|NP|PA))?(?:\s|$|\n|Medications?|Allergies?|Date|Patient)/i,
+    // Pattern 2: "Physician: Name"
+    /Physician:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})(?:\s*[,\s]*(?:MD|DO|RN|NP|PA))?(?:\s|$|\n|Medications?|Allergies?|Date|Patient)/i,
+    // Pattern 3: "Doctor: Name"
+    /Doctor:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})(?:\s*[,\s]*(?:MD|DO|RN|NP|PA))?(?:\s|$|\n|Medications?|Allergies?|Date|Patient)/i,
+    // Pattern 4: "Dr. Name" (most common)
+    /Dr\.\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})(?:\s*[,\s]*(?:MD|DO|RN|NP|PA))?(?:\s|$|\n|Medications?|Allergies?|Date|Patient)/i,
+    // Pattern 5: "Provider Name: Name"
+    /Provider Name:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})(?:\s*[,\s]*(?:MD|DO|RN|NP|PA))?(?:\s|$|\n|Medications?|Allergies?|Date|Patient)/i,
+    // Pattern 6: "Attending Physician: Name"
+    /Attending Physician:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})(?:\s*[,\s]*(?:MD|DO|RN|NP|PA))?(?:\s|$|\n|Medications?|Allergies?|Date|Patient)/i,
+    // Pattern 7: "Ordering Physician: Name"
+    /Ordering Physician:\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})(?:\s*[,\s]*(?:MD|DO|RN|NP|PA))?(?:\s|$|\n|Medications?|Allergies?|Date|Patient)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      let provider = match[1].trim();
+      
+      // Remove common medical suffixes and clean up
+      provider = provider
+        .replace(/^Dr\.?\s*/i, '')
+        .replace(/\s*MD\s*$/i, '')
+        .replace(/\s*DO\s*$/i, '')
+        .replace(/\s*,\s*MD\s*$/i, '')
+        .replace(/\s*,\s*DO\s*$/i, '')
+        .replace(/\s*RN\s*$/i, '')
+        .replace(/\s*NP\s*$/i, '')
+        .replace(/\s*PA\s*$/i, '')
+        .trim();
+      
+      // Validate: should be 2-4 words (first and last name, possibly middle initial)
+      const words = provider.split(/\s+/).filter(w => w.length > 0);
+      if (words.length < 2 || words.length > 4) {
+        continue; // Skip if doesn't look like a name
+      }
+      
+      // Validate: each word should start with capital letter and be reasonable length (2-20 chars)
+      const isValidName = words.every(word => {
+        const isCapitalized = /^[A-Z]/.test(word);
+        const isValidLength = word.length >= 2 && word.length <= 20;
+        const isProperFormat = /^[A-Z][a-z]+$/.test(word) || /^[A-Z]\.$/.test(word); // Allow middle initials like "J."
+        return isCapitalized && isValidLength && isProperFormat;
+      });
+      
+      if (!isValidName) {
+        continue; // Skip if doesn't match name pattern
+      }
+      
+      // Validate: shouldn't contain common non-name words
+      const invalidWords = ['date', 'time', 'patient', 'record', 'report', 'test', 'result', 'lab', 'medication', 'allergy', 'provider', 'physician', 'doctor'];
+      if (words.some(word => invalidWords.includes(word.toLowerCase()))) {
+        continue; // Skip if contains invalid words
+      }
+      
+      // Limit to reasonable length (max 50 characters)
+      if (provider.length > 50) {
+        continue; // Skip if too long (likely not a name)
+      }
+      
+      return provider;
+    }
+  }
+
+  return null;
 }
 
 interface UploadRecordProps {
@@ -78,11 +154,26 @@ export function UploadRecord({ user, onRecordUpdate }: UploadRecordProps) {
     setLoading(true);
     setUploadStatus(null);
     
-    // 2. Construct a unique file path
+    // 2. Extract provider name from PDF if it's a PDF file
+    let extractedProviderName: string | null = null;
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      try {
+        const pdfText = await extractTextFromPdf(file);
+        extractedProviderName = extractProviderName(pdfText);
+        if (extractedProviderName) {
+          console.log('Extracted provider name:', extractedProviderName);
+        }
+      } catch (err) {
+        console.warn('Could not extract text from PDF for provider parsing:', err);
+        // Continue with upload even if parsing fails
+      }
+    }
+    
+    // 3. Construct a unique file path
     const uniqueFileName = `${Date.now()}-${file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase()}`;
     const filePath = `${patientEmail}/${uniqueFileName}`;
 
-    // 3. Upload the file to Supabase Storage
+    // 4. Upload the file to Supabase Storage
     const { error: uploadError } = await supabase.storage
       .from(STORAGE_BUCKET)
       .upload(filePath, file, {
@@ -97,7 +188,7 @@ export function UploadRecord({ user, onRecordUpdate }: UploadRecordProps) {
         return;
     }
     
-    // 4. Insert the record metadata into the 'health_records' table
+    // 5. Insert the record metadata into the 'health_records' table
     const { error: dbError } = await supabase
       .from('health_records')
       .insert({
@@ -105,7 +196,7 @@ export function UploadRecord({ user, onRecordUpdate }: UploadRecordProps) {
           file_name: file.name,
           file_path: filePath,
           document_type: selectedFileType,
-          provider_name: null, 
+          provider_name: extractedProviderName, 
           uploaded_at: new Date().toISOString(),
       });
       
@@ -129,8 +220,143 @@ export function UploadRecord({ user, onRecordUpdate }: UploadRecordProps) {
 
 
   const handleManualAdd = async () => {
-    // Manual add logic is separate and not the current focus
-    // ...
+    // Validation
+    if (!manualData.name || !manualData.type) {
+      setUploadStatus({ message: 'Please fill in required fields (Record Name and Record Type).', type: 'error' });
+      return;
+    }
+
+    // Get the authenticated user
+    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+    const patientEmail = authUser?.email;
+
+    if (authError || !patientEmail) {
+      console.error('Auth Error:', authError);
+      setUploadStatus({ message: 'User email not found. Cannot securely add record.', type: 'error' });
+      return;
+    }
+
+    setLoading(true);
+    setUploadStatus(null);
+
+    try {
+      // 1) Generate PDF from manual entry
+      const doc = new jsPDF();
+      let yPos = 20;
+
+      // Title
+      doc.setFontSize(18);
+      doc.text(manualData.name || 'Health Record', 20, yPos);
+      yPos += 15;
+
+      // Record Type
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text('Record Type:', 20, yPos);
+      doc.setFont(undefined, 'normal');
+      const typeMap: Record<string, string> = {
+        'medication': 'Medication',
+        'procedure': 'Procedure',
+        'allergy': 'Allergy',
+        'condition': 'Condition',
+      };
+      doc.text(typeMap[manualData.type] || manualData.type, 70, yPos);
+      yPos += 10;
+
+      // Date
+      doc.setFont(undefined, 'bold');
+      doc.text('Date:', 20, yPos);
+      doc.setFont(undefined, 'normal');
+      const recordDate = manualData.date 
+        ? new Date(manualData.date).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+        : new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+      doc.text(recordDate, 70, yPos);
+      yPos += 10;
+
+      // Provider (if provided)
+      if (manualData.provider) {
+        doc.setFont(undefined, 'bold');
+        doc.text('Provider:', 20, yPos);
+        doc.setFont(undefined, 'normal');
+        doc.text(manualData.provider, 70, yPos);
+        yPos += 10;
+      }
+
+      // Additional Notes (if provided)
+      if (manualData.additionalInfo) {
+        yPos += 5;
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.text('Additional Notes:', 20, yPos);
+        yPos += 8;
+        doc.setFont(undefined, 'normal');
+        doc.setFontSize(10);
+        const splitNotes = doc.splitTextToSize(manualData.additionalInfo, 170);
+        doc.text(splitNotes, 20, yPos);
+      }
+
+      // Generate PDF blob
+      const pdfBlob = doc.output('blob');
+      const fileName = `${manualData.name.replace(/[^a-z0-9]/gi, '_')}.pdf`;
+      const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+      // 2) Upload PDF to Supabase Storage
+      const uniqueFileName = `${Date.now()}-${fileName.replace(/[^a-z0-9.]/gi, '_').toLowerCase()}`;
+      const filePath = `${patientEmail}/${uniqueFileName}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(filePath, pdfFile, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('Storage Upload Error:', uploadError);
+        setUploadStatus({ message: `File upload failed: ${uploadError.message}`, type: 'error' });
+        setLoading(false);
+        return;
+      }
+
+      // 3) Insert record into health_records table
+      const { error: dbError } = await supabase
+        .from('health_records')
+        .insert({
+          email: patientEmail,
+          file_name: fileName,
+          file_path: filePath,
+          document_type: 'application/pdf',
+          provider_name: manualData.provider || null,
+          uploaded_at: new Date().toISOString(),
+        });
+
+      if (dbError) {
+        console.error('Database Insert Error:', dbError);
+        await supabase.storage.from(STORAGE_BUCKET).remove([filePath]);
+        setUploadStatus({ message: `Database insert failed. File deleted from storage.`, type: 'error' });
+        setLoading(false);
+        return;
+      }
+
+      // Success
+      setUploadStatus({ message: 'Record added successfully!', type: 'success' });
+      toast.success('New record added!');
+      onRecordUpdate();
+
+      // Reset form
+      setManualData({
+        date: new Date().toISOString().substring(0, 10),
+        type: 'medication',
+        name: '',
+        provider: '',
+        additionalInfo: '',
+      });
+    } catch (err) {
+      console.error('Error in handleManualAdd:', err);
+      setUploadStatus({ message: 'Unexpected error while adding record.', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -277,9 +503,17 @@ export function UploadRecord({ user, onRecordUpdate }: UploadRecordProps) {
                 />
               </div>
 
-              <Button onClick={handleManualAdd} className="w-full mt-2">
-                <Plus className="w-4 h-4 mr-2" />
-                Add Record
+              <Button 
+                onClick={handleManualAdd} 
+                className="w-full mt-2"
+                disabled={loading}
+              >
+                {loading ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4 mr-2" />
+                )}
+                {loading ? 'Adding Record...' : 'Add Record'}
               </Button>
             </div>
           </TabsContent>
