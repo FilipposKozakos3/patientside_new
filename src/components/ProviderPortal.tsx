@@ -8,6 +8,7 @@ import { Label } from './ui/label';
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { PatientRecordViewer } from './PatientRecordViewer';
 import { 
   Folder, 
   Shield, 
@@ -214,7 +215,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [addDataDialogOpen, setAddDataDialogOpen] = useState(false);
   const [addDataMethod, setAddDataMethod] = useState<'upload' | 'manual'>('upload');
-  const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
+  //const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<PatientDocument | null>(null);
   const [notificationDetailOpen, setNotificationDetailOpen] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<Alert | null>(null);
@@ -238,6 +239,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
   const [manualVisitDate, setManualVisitDate] = useState('');
   const [manualProviderName, setManualProviderName] = useState('');
   const [manualNotes, setManualNotes] = useState('');
+  const [documentRefreshTrigger, setDocumentRefreshTrigger] = useState(0);
 
   // 🔑 REPLACED MOCK DATA WITH STATE INITIALIZATION
   const [patients, setPatients] = useState<ConnectedPatient[]>([]);
@@ -395,7 +397,6 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run only on initial mount
 
-
   // Handler functions
   const handleAddData = (patient: ConnectedPatient) => {
     setSelectedPatient(patient);
@@ -408,10 +409,10 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
     setViewDialogOpen(true);
   };
 
-  const handleViewDocument = (doc: PatientDocument) => {
+  /**const handleViewDocument = (doc: PatientDocument) => {
     setSelectedDocument(doc);
     setPdfViewerOpen(true);
-  };
+  };*/
 
   const generatePDFFromManualEntry = (): string => {
     const doc = new jsPDF();
@@ -506,161 +507,177 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
     const pdfBlob = doc.output('blob');
     return URL.createObjectURL(pdfBlob);
   };
-  
-  // new code added 12/01
+ 
   const handleUploadData = async () => {
-  if (!selectedPatient) {
-    toast.error('Please select a patient first');
-    return;
-  }
-
-
-
-  const patientEmail = selectedPatient.email;
-  const patientId = selectedPatient.id;
-
-  if (!patientEmail) {
-    toast.error('Selected patient is missing an email');
-    return;
-  }
-
-  if (addDataMethod === 'upload') {
-    // --------- UPLOAD BRANCH ----------
-    if (!uploadFile) {
-      toast.error('Please select a file to upload');
+    if (!selectedPatient) {
+      toast.error('Please select a patient first');
       return;
     }
-    if (!uploadDocumentType) {
-      toast.error('Please select a record type');
+
+    const patientEmail = selectedPatient.email;
+    const patientId = selectedPatient.id;
+
+    if (!patientEmail) {
+      toast.error('Selected patient is missing an email');
       return;
     }
+
+    setLoading(true);
 
     try {
-      var fileExtension = uploadFile.name.split(".").pop()?.toLowerCase();
-      let parsedFromPdf:
-        | {
-            provider: string;
-            medications: string[];
-            allergies: string[];
-            immunizations: string[];
-            lab_results: string[];
-          }
-        | null = null;
+      if (addDataMethod === 'upload') {
+        // --------- UPLOAD BRANCH ----------
+        if (!uploadFile) {
+          toast.error('Please select a file to upload');
+          return;
+        }
+        if (!uploadDocumentType) {
+          toast.error('Please select a record type');
+          return;
+        }
 
-      // 🔑 MODIFIED: Extraction and Parsing Logic for PDF files
-      if (fileExtension === "pdf") {
-        const rawText = await extractTextFromPdf(uploadFile);
-        parsedFromPdf = parseHealthRecordFromText(rawText);
-        console.log("Parsed from PDF:", parsedFromPdf);
-      }
-      
-      // 1) Upload file to Supabase Storage
-      const bucket = STORAGE_BUCKET;
-      const path = `${patientId}/${Date.now()}-${uploadFile.name}`;
-      const { error: storageError } = await supabase.storage
-        .from(bucket)
-        .upload(path, uploadFile, {
-          contentType: uploadFile.type || 'application/octet-stream',
-          upsert: true,
+        var fileExtension = uploadFile.name.split(".").pop()?.toLowerCase();
+        let parsedFromPdf:
+          | {
+              provider: string;
+              medications: string[];
+              allergies: string[];
+              immunizations: string[];
+              lab_results: string[];
+            }
+          | null = null;
+
+        // 🔑 MODIFIED: Extraction and Parsing Logic for PDF files
+        if (fileExtension === "pdf") {
+          const rawText = await extractTextFromPdf(uploadFile);
+          parsedFromPdf = parseHealthRecordFromText(rawText);
+          console.log("Parsed from PDF:", parsedFromPdf);
+        }
+        
+        // 1) Upload file to Supabase Storage
+        const bucket = STORAGE_BUCKET;
+        // 🔑 CRITICAL FIX: Use patientEmail for the file path folder
+        // This ensures uploaded files land in the same folder structure 
+        // as files uploaded by the patient (which typically use email as the path).
+        const path = `${patientEmail}/${Date.now()}-${uploadFile.name}`; 
+        
+        const { error: storageError } = await supabase.storage
+          .from(bucket)
+          .upload(path, uploadFile, {
+            contentType: uploadFile.type || 'application/octet-stream',
+            upsert: true,
+          });
+
+        if (storageError) {
+          console.error('Storage upload error:', storageError);
+          if (storageError.message?.includes('Bucket not found')) {
+            toast.error(
+              `Storage bucket "${bucket}" not found. Create it in Supabase Storage or update STORAGE_BUCKET.`
+            );
+          } else {
+            toast.error('Failed to upload file to storage.');
+          }
+          setLoading(false);
+          return;
+        }
+        
+        // 2) Insert the DocumentReference record into the database
+        const parsed = {
+          provider: providerName || "Unknown Provider", // uploader name
+          medications: parsedFromPdf?.medications || [],
+          allergies: parsedFromPdf?.allergies || [],
+          lab_results: parsedFromPdf?.lab_results || [],
+          immunizations: parsedFromPdf?.immunizations || [],
+        };
+
+        const { error: dbError } = await supabase.from('patient_documents').insert({
+          patient_id: patientId,
+          provider_id: providerId,
+          type: uploadDocumentType,
+          file_name: uploadFile.name,
+          file_path: path,
+          notes: uploadNotes,
+          // Store parsed data if available
+          structured_data: parsed,
         });
 
-      if (storageError) {
-        console.error('Storage upload error:', storageError);
-        if (storageError.message?.includes('Bucket not found')) {
-          toast.error(
-            `Storage bucket "${bucket}" not found. Create it in Supabase Storage or update STORAGE_BUCKET.`
-          );
-        } else {
-          toast.error('Failed to upload file to storage.');
+        if (dbError) {
+          throw new Error(dbError.message);
         }
-        return; 
-      }
 
-      // 2) Invoke parse-record Edge Function for THIS patient
-      // 🔑 MODIFIED: Populate the parsed object with data from the PDF parser
-      // const parsed = {
-      //   provider: parsedFromPdf?.provider || providerName || 'Unknown Provider',
-      //   medications: parsedFromPdf?.medications || [],
-      //   allergies: parsedFromPdf?.allergies || [],
-      //   lab_results: parsedFromPdf?.lab_results || [],
-      //   immunizations: parsedFromPdf?.immunizations || [],
-      // };
-      const parsed = {
-        provider: providerName || "Unknown Provider", // uploader name
-        medications: parsedFromPdf?.medications || [],
-        allergies: parsedFromPdf?.allergies || [],
-        lab_results: parsedFromPdf?.lab_results || [],
-        immunizations: parsedFromPdf?.immunizations || [],
-      };
+        toast.success(`Document uploaded and record created for ${selectedPatient.name}.`);
 
-      
-      const { data: parseData, error: parseError } = await supabase.functions.invoke(
-        'parse-record',
-        {
-          body: {
-            targetPatientEmail: patientEmail, // The patient whose record is being updated
-            userEmail: providerEmail, // The provider uploading the data (for logging/audit)
-            uploaderName: providerName,        // NEW
-            parsed, // The populated data
-            fileName: uploadFile.name,
-            filePath: path, 
+      } else if (addDataMethod === 'manual') {
+        // --------- MANUAL ENTRY BRANCH ----------
+        if (!manualTitle || !manualRecordType || !manualDescription) {
+          toast.error('Please fill in required fields for manual entry');
+          setLoading(false);
+          return;
+        }
+
+        // Generate a temporary PDF URL for storage (simulating a file for consistency)
+        // In a production app, you might only save the structured data, 
+        // but here we keep the document-centric approach.
+        const fileUrl = generatePDFFromManualEntry(); // Uses a local URL. Not a Supabase file path.
+
+        const { error: dbError } = await supabase.from('patient_documents').insert({
+          patient_id: patientId,
+          provider_id: providerId,
+          type: manualRecordType,
+          file_name: manualTitle,
+          notes: manualNotes,
+          // Store the manual data as structured data
+          structured_data: {
+            title: manualTitle,
+            type: manualRecordType,
+            date: manualRecordDate,
+            visit_date: manualVisitDate,
+            provider: manualProviderName || providerName,
+            description: manualDescription
           },
-        }
-      );
+          // For manual entry, file_path is null, but we track the generated URL
+          file_url: fileUrl, 
+          uploaded_at: new Date().toISOString(),
+          is_manual_entry: true,
+        });
 
-      if (parseError) {
-        console.error('parse-record error:', parseError);
-        toast.error('File uploaded, but failed to parse health data.');
-      } else {
-        console.log('parse-record response:', parseData);
-        toast.success(`Data uploaded and parsed for ${selectedPatient.name}`);
+        if (dbError) {
+          throw new Error(dbError.message);
+        }
+
+        toast.success(`Manual record added successfully for ${selectedPatient.name}.`);
       }
 
-      // 3) Still keep a local PatientDocument so the provider can view/download
-      const typeMap: Record<string, string> = {
-        lab: 'Lab Test',
-        imaging: 'Imaging',
-        prescription: 'Medication',
-        visit: 'Clinical Note',
-        other: 'Other',
-      };
-      const fileNameWithoutExtension = uploadFile.name.replace(/\.[^/.]+$/, '');
-      fileExtension = uploadFile.name.match(/\.[^/.]+$/)?.at(0) || '';
-      const newDocument: PatientDocument = {
-        id: String(Date.now()),
-        name: fileNameWithoutExtension,
-        type: typeMap[uploadDocumentType] || 'Other',
-        date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric', }),
-        url: URL.createObjectURL(uploadFile),
-        fileExtension,
-        patientId,
-        notes: uploadNotes || undefined,
-      };
-      setPatientDocuments(prev => [newDocument, ...prev]);
+    } catch (e: any) {
+      console.error('Upload process failed:', e);
+      toast.error(`Operation failed: ${e.message}`);
+    } finally {
+      // Refresh patient documents
+      // You should have a function to load documents for the selected patient
+      // e.g., loadPatientDocuments(selectedPatient.id);
+      
+      // Reset form + close dialog
+      setUploadFile(null);
+      setUploadDocumentType(undefined);
+      setUploadNotes('');
+      setManualRecordType(undefined);
+      setManualTitle('');
+      setManualDescription('');
+      setManualRecordDate('');
+      setManualVisitDate('');
+      setManualProviderName('');
+      setManualNotes('');
+      setAddDataDialogOpen(false);
+      setLoading(false);
 
-    } catch (err) {
-      console.error('Error in handleUploadData (upload branch):', err);
-      toast.error('Unexpected error while uploading data.');
-      return;
+      if (selectedPatient) {
+        // CRITICAL: Increment the trigger to force PatientRecordViewer to reload documents
+        setDocumentRefreshTrigger(prev => prev + 1); 
+        // Re-open the viewer for a good workflow
+        setViewDialogOpen(true);
+      }
     }
-  } else {
-    // 🔹 keep your existing manual entry branch here (unchanged)
-    // ... (Your existing manual entry logic)
-  }
-
-  // Reset form + close dialog (keep this part as you already have)
-  setUploadFile(null);
-  setUploadDocumentType(undefined);
-  setUploadNotes('');
-  setManualRecordType(undefined);
-  setManualTitle('');
-  setManualDescription('');
-  setManualRecordDate('');
-  setManualVisitDate('');
-  setManualProviderName('');
-  setManualNotes('');
-  setAddDataDialogOpen(false);
-};
+  };
 
 
 
@@ -1102,7 +1119,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
+                    <input
                       placeholder="Search patients..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
@@ -1226,7 +1243,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <Input
+                    <input
                       placeholder="Search patients..."
                       value={permissionSearch}
                       onChange={(e) => setPermissionSearch(e.target.value)}
@@ -1369,7 +1386,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
                   <div className="space-y-2">
                     {/* 🔑 MODIFIED: Use requestPatientEmail state */}
                     <Label htmlFor="requestPatientEmail">Patient Email <span className="text-red-600" style={{ color: '#dc2626' }}>*</span></Label>
-                    <Input
+                    <input
                       id="requestPatientEmail"
                       type="email"
                       placeholder="patient@example.com"
@@ -1428,6 +1445,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
       </div>
 
       {/* View Patient Dialog */}
+      {/**
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
       <DialogContent className="max-w-3xl max-h-[90vh] !grid-cols-1 flex flex-col">
         <DialogHeader className="flex-shrink-0">
@@ -1491,8 +1509,10 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
         </div>
         </DialogContent>
       </Dialog>
+      */}
 
       {/* PDF Viewer Dialog */}
+      {/**
       <Dialog open={pdfViewerOpen} onOpenChange={setPdfViewerOpen}>
         <DialogContent className="max-w-[90vw] h-[90vh] flex flex-col">
           <DialogHeader>
@@ -1529,6 +1549,15 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
           )}
         </DialogContent>
       </Dialog>
+      */}
+
+      <PatientRecordViewer
+        isOpen={viewDialogOpen}
+        onClose={() => setViewDialogOpen(false)}
+        patient={selectedPatient}
+        onAddData={handleAddData} 
+        refreshTrigger={documentRefreshTrigger} 
+      />
 
       {/* Notification Detail Dialog */}
       <Dialog open={notificationDetailOpen} onOpenChange={setNotificationDetailOpen}>
@@ -1624,7 +1653,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
               
               <div className="space-y-2">
                 <Label htmlFor="file-upload">Upload File <span className="text-red-600" style={{ color: '#dc2626' }}>*</span></Label>
-                <Input
+                <input
                   id="file-upload"
                   type="file"
                   accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
@@ -1655,7 +1684,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
             <div key="manual-entry" className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="title">Name / Title <span className="text-red-600" style={{ color: '#dc2626' }}>*</span></Label>
-                <Input
+                <input
                   id="title"
                   placeholder="e.g., Annual Checkup, CBC Test"
                   value={manualTitle ?? ''}
@@ -1684,7 +1713,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="record-date">Record Date</Label>
-                <Input
+                <input
                   id="record-date"
                   type="date"
                   value={manualRecordDate ?? ''}
@@ -1693,7 +1722,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="visit-date">Date of Visit</Label>
-                  <Input
+                  <input
                     id="visit-date"
                     type="date"
                     value={manualVisitDate ?? ''}
@@ -1704,7 +1733,7 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
 
               <div className="space-y-2">
                 <Label htmlFor="provider-name">Provider Name</Label>
-                <Input
+                <input
                   id="provider-name"
                   placeholder="Enter provider name"
                   value={manualProviderName ?? ''}
