@@ -292,10 +292,10 @@ export function PatientRecordViewer({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-4xl p-0">
-                {/* 1. Set fixed height for the entire dialog content area, and added h-full */}
-                <div className="flex flex-col lg:flex-row h-[90vh] max-h-[900px] h-full"> 
-                    {/* Left Panel: Patient Overview (Fixed Size) */}
+            <DialogContent className="max-w-4xl p-0 max-h-[90vh] overflow-y-auto">
+                {/* 1. Outer container: Cleaned up redundant classes */}
+                <div className="flex flex-col lg:flex-row h-[90vh] min-h-0">
+                    {/* Left Panel: Fixed Size */}
                     <div className="lg:w-1/3 border-b lg:border-r lg:border-b-0 p-6 flex flex-col justify-between">
                         <div className="space-y-6">
                             <div className="flex items-center space-x-4">
@@ -327,8 +327,8 @@ export function PatientRecordViewer({
                         </div>
                     </div>
 
-                    {/* 2. Right Panel: Document List (Flex container for scrolling) */}
-                    <div className="lg:w-2/3 p-6 flex flex-col min-h-0 overflow-y-hidden">
+                    {/* 2. Right Panel: Flex container for remaining space */}
+                    <div className="lg:w-2/3 p-6 flex flex-col min-h-0">
                         
                         <DialogHeader>
                             <DialogTitle className="text-xl font-semibold">
@@ -339,19 +339,19 @@ export function PatientRecordViewer({
                             </DialogDescription>
                         </DialogHeader>
 
-                        {/* 3. Tabs wrapper must be flex-col and take remaining height */}
+                        {/* 3. Tabs wrapper: Changed flex-1 min-h-0 to flex-1 h-full to force height inheritance */}
                         <Tabs defaultValue="documents" className="flex flex-col flex-1 min-h-0 mt-4">
                             <TabsList className="grid w-full grid-cols-2">
                                 <TabsTrigger value="documents"><List className="w-4 h-4 mr-2" /> Documents</TabsTrigger>
                                 <TabsTrigger value="timeline"><Clock className="w-4 h-4 mr-2" /> Timeline (WIP)</TabsTrigger>
                             </TabsList>
                             
-                            {/* 4. TabsContent must be flex-col and take remaining height (min-h-0 and flex-1 are essential) */}
-                            <TabsContent value="documents" className="flex flex-col flex-1 min-h-0 h-full">
-                                {/* FIX: Changed mb-3 to pb-2 to define height clearly */}
-                                <h3 className="text-xl font-semibold mt-4 pb-2">Health Records ({documents.length})</h3>
+                            {/* 4. TabsContent: Fixed. max-h-full is still critical here. */}
+                            <TabsContent value="documents" className="flex flex-col flex-1 min-h-0 max-h-full">
+                                {/* FIX 1: Explicitly prevent shrinking */}
+                                <h3 className="text-xl font-semibold mt-4 pb-2 flex-shrink-0">Health Records ({documents.length})</h3>
                                 
-                                <div className="flex justify-end mb-4">
+                                <div className="flex justify-end mb-4 flex-shrink-0">
                                     <Button 
                                         variant="outline" 
                                         size="sm"
@@ -367,8 +367,8 @@ export function PatientRecordViewer({
                                     </Button>
                                 </div>
                                 
-                                {/* 5. SCROLLING FIX: h-0 prevents the content from dictating height; pt-2 adds back spacing */}
-                                <div className="flex-1 overflow-y-auto h-0 pt-2"> 
+                                {/* FIX 2: Scrollable div uses flex-1 and min-h-0 */}
+                                <div className="flex-1 overflow-y-auto min-h-0 pt-2"> 
                                     <DocumentList />
                                 </div>
                             </TabsContent>
