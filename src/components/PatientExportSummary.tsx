@@ -82,6 +82,12 @@ const generateSummary = async () => {
   let dbObservations: any[] = [];
   let dbImmunizations: any[] = [];
 
+  let manualMedications: any[] = [];
+  let manualAllergies: any[] = [];
+  let manualObservations: any[] = [];
+  let manualImmunizations: any[] = [];
+
+
   if (userEmail) {
     try {
       const [
@@ -104,12 +110,96 @@ const generateSummary = async () => {
           .eq('email', userEmail),
       ]);
 
-      if (medsError) console.error('Error loading medications:', medsError);
-      if (allergyError) console.error('Error loading allergies:', allergyError);
-      if (labError) console.error('Error loading lab_results:', labError);
-      if (immError) console.error('Error loading immunizations:', immError);
+      if (medsError) console.error("Error loading medications:", medsError);
+      if (allergyError) console.error("Error loading allergies:", allergyError);
+      if (labError) console.error("Error loading lab_results:", labError);
+      if (immError) console.error("Error loading immunizations:", immError);
+
+      // ✅ NEW: load manual uploads from health_records
+      const { data: hrRows, error: hrError } = await supabase
+        .from("health_records")
+        .select("id, file_name, provider_name, document_type, uploaded_at")
+        .eq("email", userEmail);
+
+      if (hrError) console.error("Error loading health_records:", hrError);
 
       const nowIso = new Date().toISOString();
+
+      // reset manual arrays (important if generateSummary runs multiple times)
+      manualMedications = [];
+      manualAllergies = [];
+      manualObservations = [];
+      manualImmunizations = [];
+
+      (hrRows || []).forEach((row: any) => {
+        const type = (row.document_type || "").toLowerCase();
+        const label =
+          (row.file_name || "").replace(/\.pdf$/i, "") || "Manual record";
+        const lastUpdated = row.uploaded_at || nowIso;
+
+        // Manual Medications
+        if (type === "medication") {
+          manualMedications.push({
+            resourceType: "MedicationStatement",
+            id: `manual-med-${row.id}`,
+            status: "active",
+            medicationCodeableConcept: { text: label },
+            subject: { reference: "Patient/self" },
+            effectiveDateTime: lastUpdated,
+            meta: { lastUpdated },
+          });
+        }
+
+        // Manual Allergies
+        if (type === "allergy") {
+          manualAllergies.push({
+            resourceType: "AllergyIntolerance",
+            id: `manual-allergy-${row.id}`,
+            clinicalStatus: {
+              coding: [
+                {
+                  system:
+                    "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
+                  code: "active",
+                },
+              ],
+            },
+            code: { text: label },
+            patient: { reference: "Patient/self" },
+            recordedDate: lastUpdated,
+            meta: { lastUpdated },
+          });
+        }
+
+        // Manual Labs / Observations
+        if (type === "lab_result" || type === "lab" || type === "observation") {
+          manualObservations.push({
+            resourceType: "Observation",
+            id: `manual-lab-${row.id}`,
+            status: "final",
+            code: { text: label },
+            subject: { reference: "Patient/self" },
+            effectiveDateTime: lastUpdated,
+            valueString: label,
+            meta: { lastUpdated },
+          });
+        }
+
+        // Manual Immunizations
+        if (type === "immunization") {
+          manualImmunizations.push({
+            resourceType: "Immunization",
+            id: `manual-imm-${row.id}`,
+            status: "completed",
+            vaccineCode: { text: label },
+            patient: { reference: "Patient/self" },
+            occurrenceDateTime: lastUpdated,
+            meta: { lastUpdated },
+          });
+        }
+      });
+
+      
 
       dbMedications = (medsRows || []).map((row: any) => ({
         resourceType: 'MedicationStatement',
@@ -162,10 +252,35 @@ const generateSummary = async () => {
   }
 
   // 4) Combine local + Supabase FHIR resources
-  const medications   = [...localMedications,   ...dbMedications];
-  const allergies     = [...localAllergies,     ...dbAllergies];
-  const observations  = [...localObservations,  ...dbObservations];
-  const immunizations = [...localImmunizations, ...dbImmunizations];
+  // const medications   = [...localMedications,   ...dbMedications];
+  // const allergies     = [...localAllergies,     ...dbAllergies];
+  // const observations  = [...localObservations,  ...dbObservations];
+  // const immunizations = [...localImmunizations, ...dbImmunizations];
+
+  const medications = [
+    ...localMedications,
+    ...dbMedications,
+    ...manualMedications,
+  ];
+
+  const allergies = [
+    ...localAllergies,
+    ...dbAllergies,
+    ...manualAllergies,
+  ];
+
+  const observations = [
+    ...localObservations,
+    ...dbObservations,
+    ...manualObservations,
+  ];
+
+  const immunizations = [
+    ...localImmunizations,
+    ...dbImmunizations,
+    ...manualImmunizations,
+  ];
+
 
   // 5) Build FHIR Bundle
   const bundle = {
