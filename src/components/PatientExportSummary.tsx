@@ -321,9 +321,7 @@ const generateSummary = async () => {
       medications.length +
       allergies.length +
       observations.length +
-      immunizations.length +
-      localDocuments.length +
-      (patient ? 1 : 0),
+      immunizations.length,
   };
 
   // 👇 NEW: expose detailed lists for the PDF

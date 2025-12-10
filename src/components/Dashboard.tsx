@@ -96,12 +96,18 @@ export function Dashboard({
 
         const dbRecentMapped =
           dbHealthRecords?.map((row) => {
+            // Prefer explicit uploaded_by flag; fall back to presence of provider_name
+            const isPatientUpload = row.uploaded_by
+              ? row.uploaded_by !== "provider"
+              : !row.provider_name;
+
             return {
               id: row.id,
               category: "document",
-              dateAdded: row.uploaded_at || row.created_at || new Date().toISOString(),
-              provider: row.provider_name, // Keep provider_name for reference, but we'll check if it's a patient upload
-              isPatientUpload: true, // Mark as patient upload since it's from patient's email
+              dateAdded:
+                row.uploaded_at || row.created_at || new Date().toISOString(),
+              provider: row.provider_name || undefined,
+              isPatientUpload,
 
               // 🔹 OPTIONAL: keep a direct filePath field too (RecordViewer checks this)
               filePath: row.file_path,
@@ -115,8 +121,8 @@ export function Dashboard({
                   {
                     attachment: {
                       title: row.file_name,
-                      contentType: "application/pdf",    // or row.document_type
-                      url: row.file_path,                // IMPORTANT: path in bucket
+                      contentType: row.document_type || "application/pdf",
+                      url: row.file_path, // IMPORTANT: path in bucket
                     },
                   },
                 ],
@@ -278,16 +284,10 @@ export function Dashboard({
   };
 
   const getUploaderLabel = (record: any): string => {
-    // If this is marked as a patient upload, always show "You"
-    if (record.isPatientUpload) {
-      return "You";
-    }
-    // Manual/provider records store provider on the record object
-    if (record.provider) {
-      return record.provider;
-    }
-    // Default to the patient themselves
-    return "You";
+    if (!record.isPatientUpload && record.provider) return record.provider;
+    if (!record.isPatientUpload) return "Provider";
+    if (record.isPatientUpload) return "You";
+    return "Unknown uploader";
   };
 
   if (!stats) {
@@ -361,9 +361,8 @@ export function Dashboard({
                           {getRecordTitle(record)}
                         </p>
                         <p className="text-xs text-gray-500">
-                          {new Date(record.dateAdded).toLocaleDateString()} •
-                          {" "}
-                          Uploaded by {getUploaderLabel(record)}
+                          {new Date(record.dateAdded).toLocaleDateString()} •{" "}
+                          {getUploaderLabel(record)}
                         </p>
                       </div>
                     </div>
