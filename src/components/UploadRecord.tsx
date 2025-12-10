@@ -283,6 +283,22 @@ export function UploadRecord({ user, onRecordUpdate }: UploadRecordProps) {
             message: `Successfully uploaded ${file.name}`,
           });
           onRecordUpdate();
+          
+          // 3️⃣ Upload file to Supabase Storage (THIS WAS MISSING)
+          const safeName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+          const filePath = `${userEmail}/${Date.now()}-${safeName}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .upload(filePath, file);
+
+          if (uploadError) {
+            console.error("Storage Upload Error:", uploadError);
+            toast.error(`Upload failed: ${uploadError.message}`);
+            return;
+          }
+
+          // 4️⃣ Invoke Supabase Function to parse & store structured data
 
           if (userEmail && parsedFromPdf) {
             try {
@@ -293,8 +309,7 @@ export function UploadRecord({ user, onRecordUpdate }: UploadRecordProps) {
                     userEmail,
                     parsed: parsedFromPdf,
                     fileName: file.name,
-                    // you’re not using real storage paths yet, so just reuse file name
-                    filePath: file.name,
+                    filePath: filePath,
                   },
                 }
               );
