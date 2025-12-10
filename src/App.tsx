@@ -370,6 +370,7 @@ export default function App() {
                       onExportRecord={handleExportRecord}
                       onShareRecord={handleShareRecord}
                       refreshTrigger={refreshTrigger}
+                      onRecordsChanged={handleRefresh} 
                     />
                   </TabsContent>
 

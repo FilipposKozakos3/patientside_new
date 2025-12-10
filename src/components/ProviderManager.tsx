@@ -92,6 +92,7 @@ export function ProviderManager() {
       .from('health_records')
       .select('*')
       .eq('email', patientEmail) // Filter records by the patient's email
+      .eq("is_shared", true)   
       .order('uploaded_at', { ascending: false });
 
     setRecordsLoading(false);

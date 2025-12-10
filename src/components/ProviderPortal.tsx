@@ -595,10 +595,10 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
           {
             body: {
               targetPatientEmail: patientEmail, // The patient whose record is being updated
-              userEmail: providerEmail, // The provider uploading the data (for logging/audit)
-              parsed, // The populated data
+              userEmail: providerEmail,         // The provider uploading the data (for logging/audit)
+              parsed,                           // The populated data
               fileName: uploadFile.name,
-              filePath: path, 
+              filePath: path,
             },
           }
         );
@@ -608,10 +608,26 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
           toast.error('File uploaded, but failed to parse health data.');
         } else {
           console.log('parse-record response:', parseData);
+
+          // ✅ NEW: mark this exact record as shared so patient doesn’t need to check it
+          const { error: shareError } = await supabase
+            .from('health_records')
+            .update({ is_shared: true })
+            .eq('email', patientEmail)
+            .eq('file_path', path);
+
+          if (shareError) {
+            console.error('Error marking record as shared:', shareError);
+            // optional: toast.warning('Record uploaded, but sharing status could not be updated.');
+          } else {
+            console.log('Record marked as shared for patient:', patientEmail);
+          }
+
           toast.success(`Data uploaded and parsed for ${selectedPatient.name}`);
         }
 
         toast.success(`Document uploaded and record created for ${selectedPatient.name}.`);
+
 
       } else if (addDataMethod === 'manual') {
         // --------- MANUAL ENTRY BRANCH ----------

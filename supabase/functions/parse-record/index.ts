@@ -29,156 +29,108 @@ serve(async (req: Request) => {
   try {
     const body = await req.json().catch(() => ({}));
 
-    // ✅ IMPORTANT: make names explicit so you don't confuse them again
-    const targetPatientEmail = body.targetPatientEmail as string | undefined;
-    const providerEmail = body.userEmail as string | undefined; // keep same key from frontend
-    const parsed = body.parsed as ParsedPayload | undefined;
+    const targetEmail = body.targetPatientEmail;
+    const providerEmail = body.userEmail;
+    const parsed = body.parsed;
 
-    const fileName = body.fileName as string | undefined;
-    const filePath = body.filePath as string | undefined;
+    const fileName = body.fileName;
+    const filePath = body.filePath;
 
-    if (!targetPatientEmail || !parsed) {
+    if (!targetEmail || !parsed) {
       return new Response(
-        JSON.stringify({
-          success: false,
-          error: "targetPatientEmail and parsed data are required",
-        }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        JSON.stringify({ error: "Missing targetEmail or parsed data" }),
+        { status: 400, headers: corsHeaders }
       );
     }
 
-    // --------------------------
-    // 1) Store metadata
-    // --------------------------
-    if (fileName && filePath) {
-      const { error: healthError } = await supabase
-        .from("health_records")
-        .insert({
-          email: targetPatientEmail,                 // ✅ FIXED
-          provider_name: parsed.provider || null,
-          file_name: fileName,
-          file_path: filePath,
-          document_type: "application/pdf",
-          // uploaded_at default now()
-          // optionally store providerEmail if your table has a column
-        });
+    // ⭐ Must be declared OUTSIDE the insert block
+    let recordId: string | null = null;
 
-      if (healthError) {
-        console.error("Insert health record failed:", healthError);
-        // do not throw; still try meds/labs/etc
-      }
+    // -----------------------------
+    // 1) Insert health record
+    // -----------------------------
+    const { data: recordRow, error: recordError } = await supabase
+      .from("health_records")
+      .insert({
+        email: targetEmail,
+        provider_name: parsed.provider || null,
+        file_name: fileName,
+        file_path: filePath,
+        document_type: "application/pdf",
+        is_shared: !!providerEmail,
+      })
+      .select()
+      .single();
+
+
+    if (recordError) {
+      console.error("Health record insert error:", recordError);
     }
 
-    // --------------------------
-    // 2) Medications (dedupe)
-    // --------------------------
-    for (const med of parsed.medications ?? []) {
-      if (!med?.trim()) continue;
+    recordId = recordRow?.id ?? null; // ⭐ UUID used for linking
 
-      const { error } = await supabase
-        .from("medications")
-        .upsert(
-          {
-            email: targetPatientEmail,               // ✅ FIXED
-            medication: med.trim(),
-          },
-          { onConflict: "email,medication" }
-        );
+    // -----------------------------
+    // 2) Insert medications
+    // -----------------------------
+    for (const m of parsed.medications ?? []) {
+      if (!m?.trim()) continue;
 
-      if (error) {
-        console.error("Insert medication failed:", error);
-        throw new Error(`Insert medication failed: ${error.message}`);
-      }
+      await supabase.from("medications").insert({
+        email: targetEmail,
+        medication: m.trim(),
+        source_record_id: recordId,  // ⭐ use THIS
+      });
     }
 
-    // --------------------------
-    // 3) Allergies (dedupe)
-    // --------------------------
-    for (const allergy of parsed.allergies ?? []) {
-      if (!allergy?.trim()) continue;
+    // -----------------------------
+    // 3) Insert allergies
+    // -----------------------------
+    for (const a of parsed.allergies ?? []) {
+      if (!a?.trim()) continue;
 
-      const { error } = await supabase
-        .from("allergies")
-        .upsert(
-          {
-            email: targetPatientEmail,               // ✅ FIXED
-            allergy: allergy.trim(),
-          },
-          { onConflict: "email,allergy" }
-        );
-
-      if (error) {
-        console.error("Insert allergy failed:", error);
-        throw new Error(`Insert allergy failed: ${error.message}`);
-      }
+      await supabase.from("allergies").insert({
+        email: targetEmail,
+        allergy: a.trim(),
+        source_record_id: recordId,
+      });
     }
 
-    // --------------------------
-    // 4) Lab results
-    // --------------------------
-    for (const labResult of parsed.lab_results ?? []) {
-      if (!labResult?.trim()) continue;
+    // -----------------------------
+    // 4) Insert lab results
+    // -----------------------------
+    for (const lab of parsed.lab_results ?? []) {
+      if (!lab?.trim()) continue;
 
-      const { error } = await supabase
-        .from("lab_results")
-        .insert({
-          email: targetPatientEmail,                 // ✅ FIXED
-          test_name: labResult.trim(),
-          result_value: labResult.trim(),
-        });
-
-      if (error) {
-        console.error("Insert lab result failed:", error);
-        throw new Error(`Insert lab result failed: ${error.message}`);
-      }
+      await supabase.from("lab_results").insert({
+        email: targetEmail,
+        test_name: lab.trim(),
+        result_value: lab.trim(),
+        source_record_id: recordId,
+      });
     }
 
-    // --------------------------
-    // 5) Immunizations
-    // --------------------------
+    // -----------------------------
+    // 5) Insert immunizations
+    // -----------------------------
     for (const imm of parsed.immunizations ?? []) {
       if (!imm?.trim()) continue;
 
-      const { error } = await supabase
-        .from("immunizations")
-        .insert({
-          email: targetPatientEmail,                 // ✅ FIXED
-          immunization: imm.trim(),
-        });
-
-      if (error) {
-        console.error("Insert immunization failed:", error);
-        throw new Error(`Insert immunization failed: ${error.message}`);
-      }
+      await supabase.from("immunizations").insert({
+        email: targetEmail,
+        immunization: imm.trim(),
+        source_record_id: recordId,
+      });
     }
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        message: "DB updated with parsed PDF data",
-        targetPatientEmail,
-        providerEmail,
-        parsed,
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      JSON.stringify({ success: true }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("parse-record internal error:", err);
-
-    const message = err instanceof Error ? err.message : "Unknown internal error";
-
+    console.error("parse-record error:", err);
     return new Response(
-      JSON.stringify({ success: false, error: message }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      JSON.stringify({ error: err.message }),
+      { status: 500, headers: corsHeaders }
     );
   }
 });

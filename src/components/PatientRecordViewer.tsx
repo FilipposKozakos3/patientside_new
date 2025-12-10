@@ -55,51 +55,55 @@ export function PatientRecordViewer({
       .toUpperCase();
   };
 
-  const fetchPatientDocuments = useCallback(async (patient) => {
-    setLoading(true);
-    setFetchError(null);
-    setDocuments([]);
+  const fetchPatientDocuments = useCallback(
+    async (patient) => {
+      setLoading(true);
+      setFetchError(null);
+      setDocuments([]);
 
-    try {
-      const { data: files, error: listError } = await supabase.storage
-        .from("health-records")
-        .list(patient.email, {
-          limit: 100,
-          offset: 0,
-          sortBy: { column: "created_at", order: "desc" },
-        });
+      try {
+        // 1) Get only shared records from health_records
+        const { data: records, error } = await supabase
+          .from("health_records")
+          .select("*")
+          .eq("email", patient.email)
+          .eq("is_shared", true)
+          .order("uploaded_at", { ascending: false });
 
-      if (listError) throw new Error(listError.message);
+        if (error) throw new Error(error.message);
 
-      const docs = [];
-      for (const file of files || []) {
-        if (file.name === ".emptyFolderPlaceholder" || file.name === ".DS_Store")
-          continue;
+        const docs: any[] = [];
 
-        const fullPath = `${patient.email}/${file.name}`;
-        const { data: urlData } = await supabase.storage
-          .from("health-records")
-          .createSignedUrl(fullPath, 60);
+        // 2) For each shared record, create a signed URL from its file_path
+        for (const record of records || []) {
+          if (!record.file_path) continue;
 
-        if (!urlData?.signedUrl) continue;
+          const { data: urlData, error: urlError } = await supabase.storage
+            .from("health-records")
+            .createSignedUrl(record.file_path, 60);
 
-        docs.push({
-          id: file.id || fullPath,
-          name: file.name,
-          type: "other",
-          date: new Date(file.created_at).toLocaleDateString(),
-          url: urlData.signedUrl,
-          provider: file.metadata?.uploaded_by_name || "Unknown",
-        });
+          if (urlError || !urlData?.signedUrl) continue;
+
+          docs.push({
+            id: record.id,
+            name: record.file_name,
+            type: record.document_type || "document",
+            date: new Date(record.uploaded_at).toLocaleDateString(),
+            url: urlData.signedUrl,
+            provider: record.provider_name || "Unknown",
+          });
+        }
+
+        setDocuments(docs);
+      } catch (e: any) {
+        setFetchError(`Failed to load documents: ${e.message}`);
+      } finally {
+        setLoading(false);
       }
+    },
+    []
+  );
 
-      setDocuments(docs);
-    } catch (e) {
-      setFetchError(`Failed to load documents: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   useEffect(() => {
     if (patient && isOpen) fetchPatientDocuments(patient);

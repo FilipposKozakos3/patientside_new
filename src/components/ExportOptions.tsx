@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { StoredHealthRecord } from '../types/fhir';
-import { storageUtils } from '../utils/storage';
+import { supabase } from '../supabase/supabaseClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
@@ -108,18 +108,63 @@ export function ExportOptions({ record, isOpen, onClose }: ExportOptionsProps) {
     URL.revokeObjectURL(url);
   };
 
-  const downloadAllRecords = () => {
-    const jsonData = storageUtils.exportToJSON();
-    const blob = new Blob([jsonData], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `all-health-records-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const downloadAllRecords = async () => {
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user?.email) {
+        console.error("ExportOptions: no user", userError);
+        return;
+      }
+
+      const email = user.email;
+
+      const [
+        { data: healthRecords },
+        { data: medications },
+        { data: allergies },
+        { data: labResults },
+        { data: immunizations },
+      ] = await Promise.all([
+        supabase.from("health_records").select("*").eq("email", email),
+        supabase.from("medications").select("*").eq("email", email),
+        supabase.from("allergies").select("*").eq("email", email),
+        supabase.from("lab_results").select("*").eq("email", email),
+        supabase.from("immunizations").select("*").eq("email", email),
+      ]);
+
+      const exportData = {
+        exportDate: new Date().toISOString(),
+        user: { email },
+        tables: {
+          health_records: healthRecords ?? [],
+          medications: medications ?? [],
+          allergies: allergies ?? [],
+          lab_results: labResults ?? [],
+          immunizations: immunizations ?? [],
+        },
+      };
+
+      const jsonData = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonData], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `all-health-records-${new Date()
+        .toISOString()
+        .split("T")[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("ExportOptions: downloadAllRecords failed", err);
+    }
   };
+
 
   const copyToClipboard = () => {
     if (!record) return;

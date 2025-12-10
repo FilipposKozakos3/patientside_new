@@ -38,6 +38,7 @@ interface HealthRecord {
   provider_name: string | null;
   uploaded_at: string; 
   email: string;
+  is_shared?: boolean;
 }
 
 interface RecordsLibraryProps {
@@ -45,13 +46,15 @@ interface RecordsLibraryProps {
   onExportRecord: (record: StoredHealthRecord) => void;
   onShareRecord: (record: StoredHealthRecord) => void;
   refreshTrigger: number;
+  onRecordsChanged?: () => void;
 }
 
 export function RecordsLibrary({ 
   onViewRecord, 
   onExportRecord, 
   onShareRecord,
-  refreshTrigger 
+  refreshTrigger,
+  onRecordsChanged, 
 }: RecordsLibraryProps) {
   
   // Original state for FHIR-style records (kept for compatibility)
@@ -93,7 +96,15 @@ export function RecordsLibrary({
         return;
     }
     
-    setDocumentRecords(records as HealthRecord[]);
+    const typedRecords = (records ?? []) as HealthRecord[];
+    setDocumentRecords(typedRecords);
+
+    // Initialize checkboxes from DB:
+    const sharedIds = typedRecords
+      .filter((r) => r.is_shared)
+      .map((r) => r.id);
+
+    setAccessibleRecords(new Set(sharedIds));
   };
 
   // Function to generate a signed URL and open document for preview
@@ -105,16 +116,15 @@ export function RecordsLibrary({
     
     const { data, error } = await supabase.storage
       .from(STORAGE_BUCKET)
-      .createSignedUrl(record.file_path, 60); 
+      .createSignedUrl(record.file_path, 60);
 
     if (error) {
       console.error('Error generating signed URL:', error);
-      toast.error('Failed to get document link. Check storage permissions or file existence.');
+      toast.error('Failed to get document link.');
       return;
     }
 
     if (data?.signedUrl) {
-        // FIX: Opens the document directly in a new tab to bypass iframe security blocks
         window.open(data.signedUrl, '_blank'); 
         toast.success(`Opening ${record.file_name} for secure viewing.`);
     } else {
@@ -122,45 +132,57 @@ export function RecordsLibrary({
     }
   };
 
-  // Function to handle dual deletion (Storage and Database)
+  // Function to handle dual deletion (Storage + Database tables)
   const handleDeleteDocument = async (record: HealthRecord) => {
-      if (!window.confirm(`Are you sure you want to permanently delete the document "${record.file_name}"? This action cannot be undone.`)) {
-          return;
-      }
+    console.log("Deleting health record:", record);
 
-      // 1. Delete the file from Supabase Storage
-      const { error: storageError } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .remove([record.file_path]);
+    if (!window.confirm(`Are you sure you want to permanently delete the document "${record.file_name}"? This action cannot be undone.`)) {
+      return;
+    }
 
-      if (storageError) {
-        console.error('Warning: Failed to delete file from storage. File may not exist:', storageError);
-      }
+    // 1. Delete the file from Supabase Storage
+    const { error: storageError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .remove([record.file_path]);
 
-      // 2. Delete the record from the 'health_records' table
-      const { error: dbError } = await supabase
-        .from('health_records')
-        .delete()
-        .eq('id', record.id);
+    if (storageError) {
+      console.error('Warning: Failed to delete file from storage:', storageError);
+    }
 
-      if (dbError) {
-        console.error('Error deleting record from database:', dbError);
-        toast.error('Failed to delete record from database.');
-        return;
-      }
+    // 2. Delete ALL parsed clinical data tied to this record
+    await supabase.from("medications").delete().eq("source_record_id", record.id);
+    await supabase.from("allergies").delete().eq("source_record_id", record.id);
+    await supabase.from("lab_results").delete().eq("source_record_id", record.id);
+    await supabase.from("immunizations").delete().eq("source_record_id", record.id);
 
-      // 3. Update the UI state
-      setDocumentRecords(prevRecords => prevRecords.filter(r => r.id !== record.id));
-      toast.success(`"${record.file_name}" deleted permanently.`);
+    // 3. Delete base record
+    const { error: dbError } = await supabase
+      .from('health_records')
+      .delete()
+      .eq('id', record.id);
+
+    if (dbError) {
+      console.error('Error deleting record from database:', dbError);
+      toast.error('Failed to delete record from database.');
+      return;
+    }
+
+    // 4. Update UI
+    setDocumentRecords(prevRecords => prevRecords.filter(r => r.id !== record.id));
+    toast.success(`"${record.file_name}" deleted permanently.`);
+
+    // 5. Tell parent to refresh dashboard/summary
+    if (onRecordsChanged) {
+      onRecordsChanged();
+    }
   };
 
-
+  // Reload when refresh trigger changes
   useEffect(() => {
     loadPatientRecords();
   }, [refreshTrigger]);
 
-
-  // Helper to collect all unique provider names for filtering
+  // Provider filter list
   const uniqueProviders = Array.from(
     new Set(documentRecords.map(r => r.provider_name).filter(Boolean) as string[])
   );
@@ -171,21 +193,48 @@ export function RecordsLibrary({
       record.file_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       record.document_type.toLowerCase().includes(searchQuery.toLowerCase()) ||
       record.provider_name?.toLowerCase().includes(searchQuery.toLowerCase()) || false;
+
     return providerMatch && searchMatch;
   });
 
+  const toggleAccessible = async (id: number) => {
+    const isCurrentlyShared = accessibleRecords.has(id);
+    const nextShared = !isCurrentlyShared;
 
-  const toggleAccessible = (id: number) => {
-    setAccessibleRecords(prev => {
+    // Optimistic UI update
+    setAccessibleRecords((prev) => {
       const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
+      if (nextShared) newSet.add(id);
+      else newSet.delete(id);
       return newSet;
     });
+
+    // Persist
+    const { error } = await supabase
+      .from("health_records")
+      .update({ is_shared: nextShared })
+      .eq("id", id);
+
+    if (error) {
+      console.error("Failed to update sharing flag:", error);
+      toast.error("Could not update sharing for this record.");
+
+      // Roll back
+      setAccessibleRecords((prev) => {
+        const newSet = new Set(prev);
+        if (isCurrentlyShared) newSet.add(id);
+        else newSet.delete(id);
+        return newSet;
+      });
+    } else {
+      toast.success(
+        nextShared
+          ? "Record shared with your linked providers."
+          : "Record is no longer shared with providers."
+      );
+    }
   };
+
 
 
   return (

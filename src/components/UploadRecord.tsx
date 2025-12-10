@@ -2,7 +2,6 @@ import { useState, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
-import { storageUtils } from '../utils/storage';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Textarea } from './ui/textarea';
 // import { storageUtils } from '../utils/storage'; // Removed, using direct supabase calls
@@ -180,180 +179,167 @@ export function UploadRecord({ user, onRecordUpdate }: UploadRecordProps) {
       return;
     }
 
+    setLoading(true);
+    setUploadStatus(null);
+
     try {
       const fileExtension = file.name.split(".").pop()?.toLowerCase();
 
-      // 🔹 Get logged-in user email
-      let userEmail: string | null = null;
-      const { data: userData, error: userError } = await supabase.auth.getUser();
-      if (!userError && userData?.user?.email) {
-        userEmail = userData.user.email;
-      }
+      // 1️⃣ Get authenticated user (patient)
+      const {
+        data: { user: authUser },
+        error: authError,
+      } = await supabase.auth.getUser();
+      const patientEmail = authUser?.email;
 
-      // Handle JSON files (FHIR import) – unchanged
-      if (fileExtension === "json") {
-        const text = await file.text();
-        const result = storageUtils.importFromJSON(text);
-
-        if (result.success) {
-          setUploadStatus({
-            type: "success",
-            message: `Successfully imported ${result.count} record(s)`,
-          });
-          onRecordUpdate();
-        } else {
-          setUploadStatus({
-            type: "error",
-            message: result.error || "Failed to import records",
-          });
-        }
-      }
-      // Handle other file types (PDF, DOC, images)
-      else if (
-        ["pdf", "doc", "docx", "jpg", "jpeg", "png", "heic"].includes(
-          fileExtension || ""
-        )
-      ) {
-        // 1️⃣ Extract & parse the PDF if it's actually a PDF
-        let parsedFromPdf:
-          | {
-              provider: string;
-              medications: string[];
-              allergies: string[];
-              immunizations: string[];
-              lab_results: string[];
-            }
-          | null = null;
-
-        if (fileExtension === "pdf") {
-          const rawText = await extractTextFromPdf(file);
-          parsedFromPdf = parseHealthRecordFromText(rawText);
-          console.log("Parsed from PDF:", parsedFromPdf);
-        }
-
-        // 2️⃣ Your existing FileReader + DocumentReference logic
-        const reader = new FileReader();
-
-        reader.onload = async (e) => {
-          const base64Data = e.target?.result as string;
-
-          const id = `doc-${Date.now()}-${Math.random()
-            .toString(36)
-            .substr(2, 9)}`;
-          const newRecord: StoredHealthRecord = {
-            id,
-            resource: {
-              resourceType: "DocumentReference",
-              id,
-              status: "current",
-              type: {
-                text: file.name,
-              },
-              subject: {
-                reference: "Patient/self",
-              },
-              date: new Date().toISOString(),
-              content: [
-                {
-                  attachment: {
-                    contentType: file.type || `application/${fileExtension}`,
-                    title: file.name,
-                    data: base64Data.split(",")[1], // Remove data URL prefix
-                    size: file.size,
-                  },
-                },
-              ],
-              meta: {
-                lastUpdated: new Date().toISOString(),
-              },
-            },
-            category: "document",
-            consent: {
-              recordId: id,
-              sharedWith: [],
-              consentGiven: false,
-            },
-            dateAdded: new Date().toISOString(),
-            lastModified: new Date().toISOString(),
-          };
-
-          storageUtils.saveRecord(newRecord);
-          setUploadStatus({
-            type: "success",
-            message: `Successfully uploaded ${file.name}`,
-          });
-          onRecordUpdate();
-          
-          // 3️⃣ Upload file to Supabase Storage (THIS WAS MISSING)
-          const safeName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
-          const filePath = `${userEmail}/${Date.now()}-${safeName}`;
-
-          const { error: uploadError } = await supabase.storage
-            .from(STORAGE_BUCKET)
-            .upload(filePath, file);
-
-          if (uploadError) {
-            console.error("Storage Upload Error:", uploadError);
-            toast.error(`Upload failed: ${uploadError.message}`);
-            return;
-          }
-
-          // 4️⃣ Invoke Supabase Function to parse & store structured data
-
-          if (userEmail && parsedFromPdf) {
-            try {
-              const { data, error } = await supabase.functions.invoke(
-                "parse-record",
-                {
-                  body: {
-                    userEmail,
-                    parsed: parsedFromPdf,
-                    fileName: file.name,
-                    filePath: filePath,
-                  },
-                }
-              );
-
-              console.log("parse-record from upload:", { data, error });
-            } catch (err) {
-              console.error("parse-record invoke failed:", err);
-            }
-          } else {
-            console.warn(
-              "Skipped parse-record: no userEmail or no parsedFromPdf available."
-            );
-          }
-        };
-
-        reader.onerror = () => {
-          setUploadStatus({
-            type: "error",
-            message: "Error reading file. Please try again.",
-          });
-        };
-
-        reader.readAsDataURL(file);
-      } else {
+      if (authError || !patientEmail) {
+        console.error("Auth Error:", authError);
         setUploadStatus({
           type: "error",
           message:
-            "Unsupported file type. Please upload JSON, PDF, DOC, DOCX, JPG, PNG, or HEIC files.",
+            "Unable to find your account information. Please log in again.",
         });
+        setLoading(false);
+        return;
       }
 
+      // 2️⃣ Only support real documents/images here
+      if (
+        !["pdf", "doc", "docx", "jpg", "jpeg", "png", "heic"].includes(
+          fileExtension || ""
+        )
+      ) {
+        setUploadStatus({
+          type: "error",
+          message:
+            "Unsupported file type. Please upload PDF, DOC, DOCX, JPG, PNG, or HEIC files.",
+        });
+        setLoading(false);
+        return;
+      }
+
+      // 3️⃣ For PDFs, try to parse structured data
+      let parsedFromPdf:
+        | {
+            provider: string;
+            medications: string[];
+            allergies: string[];
+            immunizations: string[];
+            lab_results: string[];
+          }
+        | null = null;
+
+      if (fileExtension === "pdf") {
+        const rawText = await extractTextFromPdf(file);
+        parsedFromPdf = parseHealthRecordFromText(rawText);
+        console.log("Parsed from PDF:", parsedFromPdf);
+      }
+
+      // 4️⃣ Upload the file to Supabase Storage
+      const safeName = file.name
+        .replace(/[^a-z0-9.]/gi, "_")
+        .toLowerCase();
+      const filePath = `${patientEmail}/${Date.now()}-${safeName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error("Storage Upload Error:", uploadError);
+        setUploadStatus({
+          type: "error",
+          message: `File upload failed: ${uploadError.message}`,
+        });
+        setLoading(false);
+        return;
+      }
+
+      // 5️⃣ Save metadata / parsed info to Supabase
+      // PDFs with parsed data -> use parse-record function (it will insert into health_records + meds/allergies/etc)
+      if (fileExtension === "pdf" && parsedFromPdf) {
+        try {
+          const { data, error } = await supabase.functions.invoke(
+            "parse-record",
+            {
+              body: {
+                targetPatientEmail: patientEmail,
+                userEmail: null, // optional for this flow
+                parsed: parsedFromPdf,
+                fileName: file.name,
+                filePath,
+              },
+            }
+          );
+
+          console.log("parse-record from upload:", { data, error });
+          if (error) {
+            console.error("parse-record error:", error);
+            toast.error(
+              "File was saved, but we could not automatically extract medications/allergies."
+            );
+          }
+        } catch (err) {
+          console.error("parse-record invoke failed:", err);
+          toast.error(
+            "File was saved, but we could not automatically extract medications/allergies."
+          );
+        }
+      } else {
+        // Non-PDFs or PDFs we couldn't parse -> just insert a basic row in health_records
+        const { error: dbError } = await supabase
+          .from("health_records")
+          .insert({
+            email: patientEmail,
+            file_name: file.name,
+            file_path: filePath,
+            document_type: selectedFileType, // e.g., lab_report, imaging_report, etc.
+            provider_name: parsedFromPdf?.provider || null,
+            uploaded_at: new Date().toISOString(),
+          });
+
+        if (dbError) {
+          console.error("Database Insert Error:", dbError);
+          // roll back the file upload so we don't leave orphaned files
+          await supabase.storage.from(STORAGE_BUCKET).remove([filePath]);
+          setUploadStatus({
+            type: "error",
+            message:
+              "We could not save this record in your library. The file has been removed from storage.",
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 6️⃣ Success UI updates
+      setUploadStatus({
+        type: "success",
+        message: `Successfully uploaded ${file.name}`,
+      });
+      toast.success("New record uploaded!");
+      onRecordUpdate();
+
+      // Clear input
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
       setSelectedFileName("");
     } catch (error) {
+      console.error("Error in handleFileUpload:", error);
       setUploadStatus({
         type: "error",
         message: "Error processing file. Please try again.",
       });
+    } finally {
+      setLoading(false);
+      setTimeout(() => setUploadStatus(null), 5000);
     }
+  };
 
-    setTimeout(() => setUploadStatus(null), 5000);
-};
 
 
   const handleManualAdd = async () => {
