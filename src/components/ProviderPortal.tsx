@@ -621,36 +621,53 @@ export function ProviderPortal({ providerName, providerEmail, onLogout, onAlerts
           return;
         }
 
-        // Generate a temporary PDF URL for storage (simulating a file for consistency)
-        // In a production app, you might only save the structured data, 
-        // but here we keep the document-centric approach.
-        const fileUrl = generatePDFFromManualEntry(); // Uses a local URL. Not a Supabase file path.
+        // Generate a temporary PDF URL for local preview; we will still write via edge function
+        const fileUrl = generatePDFFromManualEntry(); // local blob URL
 
-        const { error: dbError } = await supabase.from('patient_documents').insert({
-          patient_id: patientId,
-          provider_id: providerId,
-          type: manualRecordType,
-          file_name: manualTitle,
-          notes: manualNotes,
-          // Store the manual data as structured data
-          structured_data: {
-            title: manualTitle,
-            type: manualRecordType,
-            date: manualRecordDate,
-            visit_date: manualVisitDate,
-            provider: manualProviderName || providerName,
-            description: manualDescription
-          },
-          // For manual entry, file_path is null, but we track the generated URL
-          file_url: fileUrl, 
-          uploaded_at: new Date().toISOString(),
-          is_manual_entry: true,
-        });
+        // Upload the generated PDF into the patient's folder so it appears in viewer
+        const pseudoFileName = manualTitle || 'Manual record';
+        const pseudoFilePath = `manual-${Date.now()}-${pseudoFileName.replace(/\s+/g, '-').toLowerCase()}.pdf`;
+        const storagePath = `${patientEmail}/${pseudoFilePath}`;
 
-        if (dbError) {
-          throw new Error(dbError.message);
+        try {
+          const pdfBlob = await (await fetch(fileUrl)).blob();
+          const { error: uploadErr } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .upload(storagePath, pdfBlob, {
+              contentType: "application/pdf",
+              upsert: true,
+            });
+          if (uploadErr) {
+            throw new Error(uploadErr.message);
+          }
+        } catch (err: any) {
+          throw new Error(`Failed to upload manual PDF: ${err.message || err}`);
         }
 
+        const { data: manualData, error: manualError } = await supabase.functions.invoke(
+          'parse-record',
+          {
+            body: {
+              targetPatientEmail: patientEmail,
+              userEmail: providerEmail,
+              parsed: {
+                provider: manualProviderName || providerName || 'Provider',
+                medications: [],
+                allergies: [],
+                lab_results: [],
+                immunizations: [],
+              },
+              fileName: pseudoFileName,
+              filePath: storagePath,
+            },
+          }
+        );
+
+        if (manualError) {
+          throw new Error(manualError.message || 'Failed to save manual record');
+        }
+
+        console.log('manual parse-record response:', manualData);
         toast.success(`Manual record added successfully for ${selectedPatient.name}.`);
       }
 
