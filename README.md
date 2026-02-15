@@ -14,6 +14,6 @@ Run `npm run dev` to start the development server.
 
 ## Project Presentation
 
-[View Slides (PDF)](PatientSidePPT.pdf)
+[Project Slides](PatientSidePPT.pdf)
 
   
